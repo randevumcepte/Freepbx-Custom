@@ -1,0 +1,772 @@
+;[custom-ext-not-reiachable]
+;exten => 33,1,Progress()
+;exten => 33,n,Set(audio=${SHELL(node /opt/aws-nodejs-sample/script.js --mp3=/var/lib/asterisk/sounds/audio1.mp3 --text='${myMesage}' --wav=/var/lib/asterisk/sounds/audio1.wav)})
+;exten => 33,n,Playback(audio1)
+;exten => 33,n,Hangup()
+
+;[from-internal-custom]
+;:internal extension of [polly-simple]
+;exten => 33,1,Goto(polly-simple,s,1)
+;exten => 1,1,Goto(randevu-hatirlatma,s,1)
+;exten => 2,1,NoOp(Alacak hatırlatma çağrısı başlatılıyor)
+;exten => 2,n,Set(__alacakIdler=${alacaklar})
+;exten => 2,n,Dial(PJSIP/${telefon}@${sabitno},20)
+;exten => 2,n,GotoIf($["${DIALSTATUS}"="ANSWER"]?alacak-hatirlatma,s,1)  ; Eğer çağrı cevaplanırsa yönlendir
+;exten => 2,1,Goto(alacak-hatirlatma,s,1)
+;exten => 2,n,Hangup()
+;exten => h,1,Goto(alacak-cevaplamadi,1,1)
+;exten => 2,n,GotoIf($["${DIALSTATUS}"="NOANSWER"]?alacak-cevaplamadi,1)
+;exten => 2,n,GotoIf($["${DIALSTATUS}"="BUSY"]?alacak-cevaplamadi,1)
+;exten => 2,n,Hangup()
+;exten => 2,1,NoOp(Alacak hatırlatma çağrısı başlatılıyor)
+;exten => 2,n,Set(__alacakIdler=${alacaklar})
+;exten => 2,n,Dial(PJSIP/${telefon}@${sabitno},20,gU(alacak-cevapladi))
+;exten => 2,n,NoOp(DIALSTATUS Sonucu: ${DIALSTATUS})
+;exten => 2,n,GotoIf($["${DIALSTATUS}"="ANSWER"]?alacak-hatirlatma,s,1)
+;exten => 2,n,GotoIf($["${DIALSTATUS}"="NOANSWER"]?alacak-cevaplamadi,1,1)
+;exten => 2,n,GotoIf($["${DIALSTATUS}"="BUSY"]?alacak-cevaplamadi,1,1)
+;exten => 2,n,Hangup()
+;exten => h,1,NoOp(Çağrı tamamlandı, son durum: ${DIALSTATUS})
+;exten => h,n,GotoIf($["${DIALSTATUS}"="NOANSWER"]?alacak-cevaplamadi,1,1)
+;exten => h,n,GotoIf($["${DIALSTATUS}"="BUSY"]?alacak-cevaplamadi,1,1)
+;exten => h,n,Hangup()
+
+
+[from-internal-custom]
+exten => 33,1,Goto(polly-simple,s,1)
+exten => 1,1,NoOp(Randevu hatırlatma çağrısı başlıyor)
+exten => 1,n,Set(__randevuid=${randevuid})
+exten => 1,n,Set(__calinacakKayit=${myMessage})
+exten => 1,n,Set(__operatorKanali=${kuyruk})
+
+exten => 1,n,Goto(randevu-hatirlatma,s,1)
+exten => 1,n,Hangup()
+
+; **Alacak hatırlatma çağrısını başlat**
+exten => 2,1,NoOp(Alacak hatırlatma çağrısı başlatılıyor)
+exten => 2,n,Set(__alacakIdler=${alacaklar})
+exten => 2,n,Set(__calinacakKayit=${myMessage})
+exten => 2,n,Set(__operatorKanali=${kuyruk})
+exten => 2,n,Goto(alacak-hatirlatma,s,1)
+exten => 2,n,Hangup()
+
+; kampanya tanıtım bölümü eczella
+
+exten => 3,1,NoOp(Kampanya Tanıtım çağrısı eczella)
+exten => 3,n,Set(__kampanyaKatilimciId=${katilimci})
+exten => 3,n,Set(__calinacakKayit=${myMessage})
+exten => 3,n,Set(__operatorKanali=${kuyruk})
+;exten => 3,n,Goto(kampanya-tanitim,s,1)
+
+exten => 3,n,Goto(kampanya-tanitimyeni,s,1)
+ 
+exten => 3,n,Hangup()
+
+; kampanya tanıtım bölümü randevumcepte
+
+exten => 4,1,NoOp(Kampanya Tanıtım çağrısı randevumcepte)
+exten => 4,n,Set(__kampanyaKatilimciId=${katilimci})
+exten => 4,n,Set(__calinacakKayit=${myMessage})
+exten => 4,n,Set(__operatorKanali=${kuyruk})
+;exten => 3,n,Goto(kampanya-tanitim,s,1)
+
+exten => 4,n,Goto(kampanya-tanitim,s,1)
+ 
+exten => 4,n,Hangup()
+
+;exten => h,1,NoOp(Çağrı tamamlandı, son durum: ${DIALSTATUS})
+;exten => h,n,ExecIf($["${DIALSTATUS}"="NOANSWER"]?AGI(/var/lib/asterisk/agi-bin/ulasilamadi.php,${randevuid},${alacakIdler}))
+;exten => h,n,ExecIf($["${DIALSTATUS}"="BUSY"]?AGI(/var/lib/asterisk/agi-bin/ulasilamadi.php,${randevuid},${alacakIdler}))
+;exten => h,n,Hangup()
+;exten => t,1,NoOp(Çağrı zaman aşımına uğradı)
+;exten => t,n,AGI(/var/lib/asterisk/agi-bin/ulasilamadi.php,"",${alacakIdler})
+;exten => t,n,Hangup()
+
+; **Çağrı Açıldığında Alacak Hatırlatma Başlasın**
+[alacak-cevapladi]
+exten => s,1,NoOp(Çağrı Açıldı, Alacak Hatırlatma Başlatılıyor)
+exten => s,n,Gosub(alacak-hatirlatma,s,1)
+;same => n,Return() ; Çağrının tekrar başlamasını önler
+exten => s,n,Hangup()  ; Eğer çağrı bu noktaya kadar geldiyse, tamamen kapansın
+
+; **Alacak Hatırlatma Menüsü**
+[alacak-hatirlatma]
+exten => s,1,NoOp(Alacak Hatırlatma Başladı)
+exten => s,n,Answer()
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/ulasildi.php,${randevuid},${alacakIdler})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${calinacakKayit})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n,WaitExten(5)
+;exten => s,n,GotoIf($["${EXTEN}"="1"]?odeme_islemi)
+;exten => s,n,GotoIf($["${EXTEN}"="2"]?operator)
+;exten => s,n,GotoIf($["${EXTEN}"=""]?hangup_call)
+
+exten => t,1,NoOp(Tuşlama yapılmadı, çağrı sonlandırılıyor)
+exten => t,n,Hangup()
+
+; Kullanıcı tuşlama yaparsa
+exten => 1,1,NoOp(Kullanıcı 1'e bastı - Ödeme yapılacak)
+exten => 1,n,AGI(/var/lib/asterisk/agi-bin/alacakodenecek.php,${alacakIdler})
+exten => 1,n,NoOp(Agi status ${AGI_STATUS})
+exten => 1,n,GotoIf($["${AGI_STATUS}"="success"]?success:failure)
+
+exten => 1,n(success),NoOp(Ödeme başarılı)
+exten => 1,n,Set(ENCODED_DATA=${SHELL(echo -n 'Ödeme yapacağınıza dair bildiriminiz tarafımıza başarıyla ulaşmıştır. Sağlıklı günler dileriz.' | base64)})
+
+exten => 1,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => 1,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 1,n(success),Hangup()
+
+exten => 1,n(failure),NoOp(Ödeme başarısız)
+exten => 1,n,Set(ENCODED_DATA=${SHELL(echo -n 'Şu an sistemde bir sorun mevcut. Sizi operatöre aktarıyorum' | base64)})
+exten => 1,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => 1,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 1,n(failure),Dial(PJSIP/31)
+exten => 1,n(failure),Hangup()
+
+exten => 2,1,NoOp(Operatöre bağlanıyor)
+exten => 2,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,Sizi operatöre aktarıyorum)
+exten => 2,n,Queue(${operatorKanali},t)
+exten => 2,n,Hangup()
+
+
+;exten => 1,1,AGI(/var/lib/asterisk/agi-bin/alacakodenecek.php,${alacakIdler})
+;exten => 1,n,GotoIf($["${AGISTATUS}"="success"]?success:failure)
+;exten => 1,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php, Ödemeniz alınmıştır. Teşekkür ederiz.)
+;exten => 1,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php, Şu an sistemde bir sorun oluştu. Sizi operatöre aktarıyorum)
+;exten => 1,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+;exten => 1,n,Dial(PJSIP/31);operatöer bağlan değiştir bunu
+;exten => 1,n,Hangup()
+;exten => 2,1,Dial(PJSIP/31) ; Operatöre bağlan
+;exten => 2,n,Hangup()
+
+; **Timeout veya Hata Durumu için `t` ve `e` uzantılarını ekleyelim**
+;exten => t,1,AGI(/var/lib/asterisk/agi-bin/timeout.php,${alacakIdler})
+;exten => t,n,Hangup()
+;exten => e,1,AGI(/var/lib/asterisk/agi-bin/error.php,${alacakIdler})
+;exten => e,n,Hangup()
+
+; **Cevapsız Çağrı İçin**
+[alacak-cevaplamadi]
+exten => 1,1,NoOp(alacak için yanıtlanmadı)
+exten => 1,n,AGI(/var/lib/asterisk/agi-bin/ulasilamadi.php,${alacakIdler})
+exten => 1,n,Hangup()
+
+[kampanya-tanitimyeni]
+exten => s,1,NoOp(Kampanya tanıtımı başladı)
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/ulasildiEczane.php,${randevuid},${alacakIdler},${kampanyaKatilimciId})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php, ${calinacakKayit})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n(evethayirloop),AGI(/var/lib/asterisk/agi-bin/evetHayirCevap.php)
+
+; Evet yanıtları
+exten => s,n,GotoIf($["${EVETHAYIR}" = "evet" | "${EVETHAYIR}" = "elbette" | "${EVETHAYIR}" = "tabi" | "${EVETHAYIR}" = "tabii" | "${EVETHAYIR}" = "tabii olur" | "${EVETHAYIR}" = "tabi olur" | "${EVETHAYIR}" = "neden olmasın" | "${EVETHAYIR}" = "tabiki" | "${EVETHAYIR}" = "tabii ki" | "${EVETHAYIR}" = "tabiiki" | "${EVETHAYIR}" = "istiyorum" | "${EVETHAYIR}" = "olur"]?cevap-evet,1)
+
+; Hayır yanıtları
+exten => s,n,GotoIf($["${EVETHAYIR}" = "hayır" | "${EVETHAYIR}" = "hayir" | "${EVETHAYIR}" = "olmaz" | "${EVETHAYIR}" = "istemiyorum" | "${EVETHAYIR}" = "siktir git" | "${EVETHAYIR}" = "çek git" | "${EVETHAYIR}" = "siktir lan" | "${EVETHAYIR}" = "siktir" | "${EVETHAYIR}" = "defol" | "${EVETHAYIR}" = "defol lan" | "${EVETHAYIR}" = "kapat" | "${EVETHAYIR}" = "kapat lan" | "${EVETHAYIR}" = "hayır tabiki" | "${EVETHAYIR}" = "hayır lan"]?cevap-hayir,1)
+
+exten => cevap-evet,1,NoOp(Kullanıcı EVET dedi)
+exten => cevap-evet,n,AGI(/var/lib/asterisk/agi-bin/kampanyakatilinacakEczane.php,${kampanyaKatilimciId},1)
+exten => cevap-evet,n,GotoIf($["${AGI_STATUS}"="success"]?success:failure)
+
+exten => cevap-evet,n(success),Set(ENCODED_DATA=${SHELL(echo -n 'Esemes olarak indirim kodunuzu ve yol tarifini size gönderdim. Bizi tercih ettiğiniz için tekrar teşekkür eder, sağlıklı ve mutlu günler dileriz.' | base64)})
+exten => cevap-evet,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => cevap-evet,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => cevap-evet,n(suceess),Hangup()
+exten => cevap-evet,n(failure),NoOp(Katılım başarısız)
+exten => cevap-evet,n,Set(ENCODED_DATA=${SHELL(echo -n 'Şu an sistemde  bir sorun mevcut. Sizi operatöre aktarıyorum' | base64)})
+exten => cevap-evet,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => cevap-evet,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => cevap-evet,n(failure),Queue(${operatorKanali},t)
+exten => cevap-evet,n(failure),Hangup()
+exten => cevap-hayir,1,NoOp(2 ye basıldı)
+exten => cevap-hayir,n,AGI(/var/lib/asterisk/agi-bin/kampanyakatilinacak.php,${kampanyaKatilimciId},0)
+exten => cevap-hayir,n,NoOp(Agi status ${AGI_STATUS})
+exten => cevap-hayir,n,GotoIf($["${AGI_STATUS}"="success"]?success:failure)
+exten => cevap-hayir,n(success),NoOp(Katılım Cevabı Başarılı)
+exten => cevap-hayir,n,Set(ENCODED_DATA=${SHELL(echo -n 'Tabi, anlıyorum. İleride ihtiyaç duyarsanız biz her zaman buradayız. Bizi tercih ettiğiniz için teşekkür eder, sağlıklı günler dileriz.' | base64)})
+exten => cevap-hayir,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => cevap-hayir,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => cevap-hayir,n(success),Hangup()
+
+exten => cevap-hayir,n(failure),NoOp(Katılım başarısız)
+exten => cevap-hayir,n,Set(ENCODED_DATA=${SHELL(echo -n 'Şu an sistemde  bir sorun mevcut. Sizi operatöre aktarıyorum' | base64)})
+exten => cevap-hayir,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => cevap-hayir,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => cevap-hayir,n(failure),Queue(${operatorKanali},t)
+exten => cevap-hayir,n(failure),Hangup()
+exten => s,n,NoOp(Cevap tanınmadı, geri dönülüyor)
+exten => s,n,Set(ENCODED_DATA=${SHELL(echo -n 'Sizi anlaymadım. Evet veya hayır diyebilirsiniz.' | base64)})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n,Goto(s,evethayirloop)
+
+
+[kampanya-tanitim]
+exten => s,1,NoOp(Kampanya tanıtımı başladı)
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/ulasildi.php,${randevuid},${alacakIdler},${kampanyaKatilimciId})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php, ${calinacakKayit})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+;exten => s,n,AGI(/var/lib/asterisk/agi-bin/evetHayirCevap.php)
+
+exten => s,n,WaitExten(5)
+exten => t,1,NoOp(Tuşlama yapılmadığı için çağrı sonlandırılıyor)
+exten => t,n,Hangup()
+
+exten => 1,1,NoOp(1 e basıldı)
+exten => 1,n,AGI(/var/lib/asterisk/agi-bin/kampanyakatilinacak.php,${kampanyaKatilimciId},1)
+exten => 1,n,NoOp(Agi status ${AGI_STATUS})
+exten => 1,n,GotoIf($["${AGI_STATUS}"="success"]?success:failure)
+exten => 1,n(success),NoOp(Katılım Cevabı Başarılı)
+exten => 1,n,Set(ENCODED_DATA=${SHELL(echo -n 'Kampanyamıza katılım bildiriminiz tarafımıza başarıyla ulaşmıştır. Sağlıklı günler dileriz.' | base64)})
+exten => 1,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => 1,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 1,n(success),Hangup()
+
+exten => 1,n(failure),NoOp(Katılım başarısız)
+exten => 1,n,Set(ENCODED_DATA=${SHELL(echo -n 'Şu an sistemde  bir sorun mevcut. Sizi operatöre aktarıyorum' | base64)})
+exten => 1,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => 1,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 1,n(failure),Queue(${operatorKanali},t)
+exten => 1,n(failure),Hangup()
+
+exten => 2,1,NoOp(2 ye basıldı)
+exten => 2,n,AGI(/var/lib/asterisk/agi-bin/kampanyakatilinacak.php,${kampanyaKatilimciId},0)
+exten => 2,n,NoOp(Agi status ${AGI_STATUS})
+exten => 2,n,GotoIf($["${AGI_STATUS}"="success"]?success:failure)
+exten => 2,n(success),NoOp(Katılım Cevabı Başarılı)
+exten => 2,n,Set(ENCODED_DATA=${SHELL(echo -n 'Kampanyamıza katılım bildiriminiz tarafımıza başarıyla ulaşmıştır. Sağlıklı günler dileriz' | base64)})
+exten => 2,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => 2,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 2,n(success),Hangup()
+
+exten => 2,n(failure),NoOp(Katılım başarısız)
+exten => 2,n,Set(ENCODED_DATA=${SHELL(echo -n 'Şu an sistemde  bir sorun mevcut. Sizi operatöre aktarıyorum' | base64)})
+exten => 2,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => 2,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 2,n(failure),Queue(${operatorKanali},t)
+exten => 2,n(failure),Hangup()
+
+;can be referenced by creating a Custom Destination
+;Target= polly-simple,s,1
+;Description= A simple Amazon Polly test
+[polly-simple]
+exten => s,1,NoOp(Entering Polly-Simple Context)
+exten => s,1,Answer()
+exten => s,n,Set(Msg=${myMessage})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${Msg})
+exten => s,n,Hangup()
+
+;[alacak-hatirlatma]
+;exten => s,1,NoOp(Alacak Hatırlatma)
+;exten => s,n,Set(__alacakIdler=${alacaklar})
+;exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${myMessage})
+;exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID_ALACAK_KARSILAMA})
+;exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+;exten => s,n,WaitExten(5)
+;exten => 1,1,AGI(/var/lib/asterisk/agi-bin/alacakodenecek.php,${alacakIdler})
+;exten => 1,n,GotoIf($["${AGISTATUS}"="SUCCESS"]?success:failure)
+;exten => 1,n(success),AGI(/var/lib/asterisk/agi-bin/poolysimple.php,Ödeme yapacağınız konusundaki bildiriminiz tarafımıza ulaşmıştır. İyi günler dileriz)
+;exten => 1,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,Şu an sistemde bir sıkıntı mevcuttur. Sizi operatöre aktarıyorum)
+;exten => 1,n(failure),Dial(PJSIP/31)
+;exten => 1,n,Hangup()
+;exten => 2,1,Dial(PJSIP/31);operatöre bağlanma burayı değiştir
+;exten => 2,n,Hangup()
+;exten => h,1,NoOp(Açmadı)
+;exten => h,n,AGI(/var/lib/asterisk/agi-bin/ulasilamadi.php,${alacakIdler})
+;exten => h,n,Hangup()
+
+;[alacak-hatirlatma]
+;exten => s,1,NoOp(Alacak Hatırlatma)
+;exten => s,n,Answer()
+;exten => s,n,Set(__alacakIdler=${alacaklar})
+;exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${myMessage})
+;exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID_ALACAK_KARSILAMA})
+;exten => s,n,WaitExten(5)
+;exten => 1,1,AGI(/var/lib/asterisk/agi-bin/alacakodenecek.php,${alacakIdler})
+;exten => 1,n,GotoIf($["${AGISTATUS}"="SUCCESS"]?success:failure)
+;exten => 1,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,Ödeme yapacağınız bildiriminiz tarafımıza ulaşmıştır.)
+;exten => 1,n,Hangup()
+;exten => 2,1,Dial(PJSIP/31) ; Operatöre bağlanma
+;exten => 2,n,Hangup()
+
+[randevu-hatirlatma]
+exten => s,1,NoOp(Randevu Hatirlatma)
+exten => s,n,Answer()
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/ulasildi.php,${randevuid},${alacakIdler},${kampanyaKatilimciId})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${calinacakKayit})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+;exten => s,n,Goto(randevu-secim-menu,s,1)
+
+
+;exten => s,1,NoOp(Randevu Seçim Menüsü)
+exten => s,n,WaitExten(5)  ; 5 saniye giriş bekle
+
+; 1 tuşuna basıldığında çalışacak
+exten => 1,1,NoOp(1 Tuşlandı)
+exten => 1,n,AGI(/var/lib/asterisk/agi-bin/randevuyagelinecek.php,${randevuid})
+exten => 1,n,GotoIf($["${AGISTATUS}"="SUCCESS"]?success:failure)
+exten => 1,n(success),Set(RANDEVU_BILDIRIM_BASARILI=${SHELL(echo -n 'Randevunuza geleceğiniz tarafımıza başarı ile bildirilmiştir. Randevunuza on beş dakika önce gelmenizi önemle rica eder, sağlıklı günler dileriz.' | base64)})
+exten => 1,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,"${RANDEVU_BILDIRIM_BASARILI}")
+exten => 1,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 1,n(success),Hangup()
+
+exten => 1,n(failure),Set(RANDEVU_BILDIRIM_BASARISIZ=${SHELL(echo -n "Şu an sistemde bir sorun mevcut." | base64)})
+exten => 1,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${RANDEVU_BILDRIM_BASARISIZ})
+exten => 1,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 1,n(failure),Goto(operator-bagla,s,1)
+
+; 2 tuşuna basıldığında başka menüye yönlendirme
+exten => 2,1,NoOp(2 Tuşlandı)
+exten => 2,n,Goto(randevu-guncelleme-menu,s,1)
+
+[randevu-guncelleme-menu]
+exten => s,1,NoOp(Randevu Güncelleme Menüsü id : ${randevuid})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/uygunrandevubul.php,${randevuid},${userId},${salonid})
+exten => s,n,NoOp(${calinacakKayit})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${calinacakKayit})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n,WaitExten(3)  ; 5 saniye bekle
+
+; 1 tuşuna basıldığında randevu güncellenecek
+exten => 1,1,AGI(/var/lib/asterisk/agi-bin/randevuguncelle.php,${randevuid},${uygunrandevutarih},${uygunrandevusaat})
+exten => 1,n,GotoIf($["${AGISTATUS}"="SUCCESS"]?success:failure)
+exten => 1,n(success),Set(ENCODED_DATA_3=${SHELL(echo -n "Randevunuz ${TARIH_BUGUN_YARIN} saat ${uygunrandevusaat} olarak başarıyla güncellendi. Randevunuza 15 dakika önce gelmenizi önemle rica eder, sağlıklı günler dileriz."  | base64)})
+exten => 1,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA_3})
+exten => 1,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 1,n(success),Hangup()
+exten => 1,n,Set(ENCODED_DATA_4=${SHELL(echo -n "Şu an sistemde bir sorun mevcut." | base64)})
+exten => 1,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA_4})
+exten => 1,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 1,n,Goto(operator-bagla,s,1)
+
+; 2 tuşuna basıldığında operatöre bağlanacak
+exten => 2,1,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,Sizi operatöre aktarıyorum)
+exten => 2,n,Goto(operator-bagla,s,1)
+
+[operator-bagla-salooncadde]
+exten => s,1,NoOp(Operatöre bağlanıyor)
+exten => s,n,Set(ENCODED_DATA=${SHELL(echo -n "Saloon Cadde'ye hoşgeldiniz. Sizi salonumuza aktarıyorum." | base64 )})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n,Dial(Local/${operatorKanali}@from-queue/n)
+exten => s,n,Hangup()
+
+
+[operator-bagla]
+exten => s,1,NoOp(Operatöre bağlanıyor)
+
+;  Bilgilendirme metni (Polly'den ses oluşturma)
+exten => s,n,Set(ENCODED_DATA=${SHELL(echo -n "Görüşmeleriniz 6698 sayılı kişisel verileri koruma kanunu kapsamında kayıt altına alınacaktır. Sizi operatöre aktarıyorum." | base64 )})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+
+;  Yıl/Ay/Gün klasörü oluştur
+;exten => s,n,Set(DATEPATH=${STRFTIME(${EPOCH},,%Y/%m/%d)})
+;exten => s,n,Set(MONITOR_DIR=/var/spool/asterisk/monitor/${DATEPATH})
+;exten => s,n,System(mkdir -p ${MONITOR_DIR})
+
+;  Dosya ismi oluştur
+;exten => s,n,Set(CALLFILENAME=${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${UNIQUEID})
+
+;  CDR için sadece dosya adı yaz (yol olmadan)
+;exten => s,n,Set(CDR(recordingfile)=${CALLFILENAME}.wav)
+
+;  MixMonitor başlat (kayıt geçici olarak ana klasöre alınır)
+;exten => s,n,MixMonitor(${CALLFILENAME}.wav,b)
+
+; ☎ Çağrıyı başlat
+;exten => s,n,Dial(PJSIP/0${operatorKanali}@${isletmeTrunk},30)
+exten => s,n,Dial(Local/${operatorKanali}@from-queue/n)
+
+; 🛑 Çağrı bittikten sonra MixMonitor’u durdur
+exten => s,n,StopMixMonitor()
+
+; 🚚 Kaydı yıl/ay/gün klasörüne taşı
+;exten => s,n,System(/bin/mv /var/spool/asterisk/monitor/${CALLFILENAME}.wav ${MONITOR_DIR}/)
+
+
+; 🔒 CDR’yi güvenli şekilde güncelle (bazı sürümler overwrite etmiyor)
+;exten => s,n,Set(CDR_PROP(disable)=1)
+;exten => s,n,Set(CDR(recordingfile)=${CALLFILENAME}.wav)
+;exten => s,n,Set(CDR_PROP(disable)=0)
+
+; 📞 Çağrıyı sonlandır
+exten => s,n,Hangup()
+
+
+
+
+
+;Geçerli olmayan tuşa basıldı
+
+;exten => t,1,NoOp(Eksik veya hatalı bir tuşlama yapıldı)
+;exten => t,n,Set(Msg=Eksik veya hatalı bir tuşlama yaptınız.)
+;exten => t,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${Msg})
+;exten => t,n,WaitExten(5)
+;tekrar tuşlama yapılmazsa
+;exten => t,n,NoOp(Tuşlama yapılmadı veya gene hatalı tuşlama)
+;exten => t,n,Hangup()
+
+[from-trunk]
+exten => _X.,1,NoOp(DID e göre yönlendirme)
+exten => _X.,n,Answer()
+exten => _X.,n,AGI(/var/lib/asterisk/agi-bin/karsilamaRouter.php,${EXTEN})
+exten => _X.,n,Hangup()
+
+
+
+[from-trunk-custom]
+exten => s,1,NoOp(Gelen çağrı trunktan)
+exten => s,n,Set(CDR(did)=${CHANNEL(did)})
+exten => s,n,Answer()
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/karsilama_yeni_2.php)
+exten => s,n,Set(__salonid=${SALON_ID})
+exten => s,n,Set(__userId=${USER_ID})
+exten => s,n,Set(__operatorKanali=${OPERATOR_KANALI})
+exten => s,n,Set(__karsilamaMetni=${KARSILAMA_METNI})
+exten => s,n,Set(__isletmeTrunk=${ISLETME_TRUNK})
+exten => s,n,Set(__anaMenu=${ANA_MENU})
+exten => s,n,Set(__hizmetBulunamadi=)
+exten => s,n,Set(__extenKisim=)
+exten => s,n,Set(__intent=)
+
+; Progress ile early media uyarısı gönder, ringback için fallback
+exten => s,n,Progress()
+
+; TTS çağrısı
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${karsilamaMetni})
+
+; Ringback için fallback tone, Background sonrası çalma
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+
+; Ana menüye git
+exten => s,n,Goto(ana-menu,s,1)
+
+; Tuş seçenekleri
+exten => 1,1,Goto(yeni-randevu-menusu,s,1)
+exten => 2,1,Goto(randevu-guncelleme-menu,s,1)
+exten => 3,1,Goto(randevu-iptal-menusu,s,1)
+exten => 4,1,Goto(yol-tarifi,s,1)
+exten => 0,1,Goto(ana-menu,s,1)
+[eczane-karsilamasi-2]
+exten => s,1,NoOp(Gelen çağrı trunktan)
+exten => s,n,Answer()
+exten => s,n,Dial(PJSIP/05363961945@902323423532,30)
+exten => s,n,Hangup()
+
+
+[eczane-karsilamasi]
+exten => s,1,NoOp(Gelen çağrı trunktan)
+exten => s,n,Set(CDR(did)=${CHANNEL(did)})
+exten => s,n,Progress()                ; çağrıye erken medya başlat
+exten => s,n,Wait(1)
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/karsilama_eczane.php)
+
+; değişkenleri ayarlama
+exten => s,n,Set(__salonid=${SALON_ID})
+exten => s,n,Set(__isletmeTrunk=${ISLETME_TRUNK})
+exten => s,n,Set(__userId=${USER_ID})
+exten => s,n,Set(__operatorKanali=${OPERATOR_KANALI})
+exten => s,n,Set(__karsilamaMetni=${KARSILAMA_METNI})
+exten => s,n,Set(__anaMenu=${ANA_MENU})
+exten => s,n,Set(__hizmetBulunamadi=)
+exten => s,n,Set(__extenKisim=)
+exten => s,n,Set(__intent=)
+exten => s,n,Set(__kampanyaKatilimciId=${KATILIMCI_ID})
+exten => s,n,Set(__calinacakKayit=${KAMPANYA_ICERIK})
+
+; Polly TTS ile ses dosyası oluştur
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${karsilamaMetni})
+
+; dosyanın oluşmasını bekle (opsiyonel ama stabiliteyi artırır)
+exten => s,n,Wait(2)
+
+; Playback yerine Background kullanabiliriz, ancak dosya adı doğru olmalı
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+
+; Ana menüye git
+exten => s,n,Goto(eczane-ana-menu,s,1)
+
+; kısa numaralar
+exten => 1,1,Goto(eczane-yol-tarifi,s,1)
+exten => 2,1,Goto(eczaciya-bagla,s,1)
+exten => 0,1,Goto(kampanya-tanitimyeni,s,1)
+
+
+[eczane-ana-menu]
+exten => s,1,NoOp(Ana Menü ve ${calinacakKayit})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${anaMenu})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n,WaitExten(3) ;5 sn bekle
+exten => 1,1,Goto(eczane-yol-tarifi,s,1)
+
+exten => 2,1,Goto(eczaciya-bagla,s,1)
+exten => 0,1,Goto(kampanya-tanitimyeni,s,1)
+exten => t,1,Goto(eczane-ana-menu,s,1)
+
+
+[eczaciya-bagla]
+exten => s,1,NoOp(Operatöre bağlanıyor)
+
+;  Bilgilendirme metni (Polly'den ses oluşturma)
+exten => s,n,Set(ENCODED_DATA=${SHELL(echo -n "Görüşmeleriniz 6698 sayılı kişisel verileri koruma kanunu kapsamında kayıt altına alınacaktır. Sizi eczanemize aktarıyorum. Lütfen hatta kalınız" | base64 )})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+
+;  Yıl/Ay/Gün klasörü oluştur
+;exten => s,n,Set(DATEPATH=${STRFTIME(${EPOCH},,%Y/%m/%d)})
+;exten => s,n,Set(MONITOR_DIR=/var/spool/asterisk/monitor/${DATEPATH})
+;exten => s,n,System(mkdir -p ${MONITOR_DIR})
+
+;  Dosya ismi oluştur
+;exten => s,n,Set(CALLFILENAME=${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${UNIQUEID})
+
+;  CDR için sadece dosya adı yaz (yol olmadan)
+;exten => s,n,Set(CDR(recordingfile)=${CALLFILENAME}.wav)
+
+;  MixMonitor başlat (kayıt geçici olarak ana klasöre alınır)
+;exten => s,n,MixMonitor(${CALLFILENAME}.wav,b)
+
+; ☎ Çağrıyı başlat
+;exten => s,n,Dial(PJSIP/0${operatorKanali}@${isletmeTrunk},30)
+exten => s,n,Dial(Local/${operatorKanali}@from-queue/n)
+
+; 🛑 Çağrı bittikten sonra MixMonitor’u durdur
+;exten => s,n,StopMixMonitor()
+
+; 🚚 Kaydı yıl/ay/gün klasörüne taşı
+;exten => s,n,System(/bin/mv /var/spool/asterisk/monitor/${CALLFILENAME}.wav ${MONITOR_DIR}/)
+
+
+; 🔒 CDR’yi güvenli şekilde güncelle (bazı sürümler overwrite etmiyor)
+;exten => s,n,Set(CDR_PROP(disable)=1)
+;exten => s,n,Set(CDR(recordingfile)=${CALLFILENAME}.wav)
+;exten => s,n,Set(CDR_PROP(disable)=0)
+
+; 📞 Çağrıyı sonlandır
+exten => s,n,Hangup()
+
+
+[yeni-kayit]
+exten => s,1,Set(__yeniMusteri=1)
+exten => s,n,NoOp(Yeni müşteri kaydı)
+exten => s,n,Set(ENCODED_DATA=${SHELL(echo -n "Randevu oluşturmak için lütfen adınızı ve soyadınızı söyler misiniz?" | base64)})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+;exten => s,n,AGI(/var/lib/asterisk/agi-bin/yenimusterikaydi.php,${salonid})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/yeniMusteriKaydi.py,${salonid})
+exten => s,n,NoOp(agi status ${AGISTATUS})
+exten => s,n,GotoIf($["${AGISTATUS}"="SUCCESS"]?success:failure)
+exten => s,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${yeniMusteriHosgeldin})
+exten => s,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n(success),Goto(yeni-randevu-menusu,s,1)
+exten => s,n(failure),Set(ENCODED_DATA=${SHELL(echo -n "Şu an sistemde bir sorun mevcut, sizi operatöre aktarıyorum" | base64)})
+exten => s,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n(failure),Goto(operator-bagla,s,1)
+
+[yeni-kayit-eczane]
+exten => s,1,Set(__yeniMusteri=1)
+exten => s,n,NoOp(Yeni müşteri kaydı)
+exten => s,n,Set(ENCODED_DATA=${SHELL(echo -n "Yol tarifini iletebilmem için lütfen adınızı ve soyadınızı söyler misiniz?" | base64)})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/yenimusterikaydi.php,${salonid})
+exten => s,n,NoOp(agi status ${AGISTATUS})
+exten => s,n,GotoIf($["${AGISTATUS}"="SUCCESS"]?success:failure)
+exten => s,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${yeniMusteriHosgeldin})
+exten => s,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n(success),Goto(eczane-yol-tarifi,s,1)
+exten => s,n(failure),Set(ENCODED_DATA=${SHELL(echo -n "Şu an sistemde bir sorun mevcut, sizi operatöre aktarıyorum" | base64)})
+exten => s,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n(failure),Goto(eczaciya-bagla,s,1)
+
+
+[ana-menu]
+exten => s,1,NoOp(Ana Menü)
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${anaMenu})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n,WaitExten(3) ;5 sn bekle
+
+exten => 1,1,Goto(yeni-randevu-menusu,s,1)
+
+
+exten => 0,1,NoOp(5'e basıldı tekrar başlat)
+exten => 0,n,Goto(ana-menu,s,1)
+;exten => 1,1,Goto(yeni-randevu-menusu,s,1)
+
+exten => 3,1,Goto(randevu-iptal-menusu,s,1)
+exten => 2,1,Goto(randevu-guncelleme-menu,s,1)
+exten => 4,1,Goto(yol-tarifi,s,1)
+exten => t,1,Goto(operator-bagla,s,1)
+
+[yeni-randevu]
+exten => s,1,NoOp(Yeni randevu oluştur)
+exten => s,n,GotoIf($["${hizmet}"=""]?hizmet_iste)
+exten => s,n,GotoIf($["${tarihSaat}"=""]?tarih_saat_iste)
+exten => s,n,GotoIf($["${verilerTammi}"="true"]?veriler_tam)
+exten => s,n(hizmet_iste),Gosub(sesli-yanit,s,1)
+exten => s,n(tarih_saat_iste),Gosub(sesli-yanit,s,1)
+exten => s,n(veriler_tam),Hangup()
+
+[yaniti-cal]
+exten => s,1,NoOp(Yanıt çalınacak)
+exten => s,n,Answer() 
+exten => s,n,Set(ENCODED_DATA=${SHELL(echo -n ${sistemYaniti} | base64)}) 
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n,Return()
+
+[sesli-yanit]
+exten => s,1,NoOp(Çağrı sesini WebSocket üzerinden kaydediyoruz)
+exten => s,n,Answer()  
+;exten => s,n,AGI(/var/lib/asterisk/agi-bin/sesliyanit2.php,${intent},${salonid})
+;exten => s,n,AGI(/var/lib/asterisk/agi-bin/sesliyanit2.php)
+exten => s,n,EAGI(/var/lib/asterisk/agi-bin/stream-transcribe.php)
+;exten => s,n,Jack() 
+;exten => s,n,EAGI(/var/lib/asterisk/agi-bin/sesli-deneme.php)
+;exten => s,n,EAGI(/var/lib/asterisk/agi-bin/websocket-seskaydi-deneme.php)
+;exten => s,n,Set(__hizmet=${HIZMET})
+;exten => s,n,Set(__tarihSaat=${TARIH_SAAT})
+;exten => s,n,Stasis(transcribe-and-dialog-rt)
+
+exten => s,n,Set(__sistemYaniti=${SISTEM_YANITI})
+;exten => s,n,Set(__intentText=${INTENT_TEXT})
+;exten => s,n,Set(intent=${intent} ${INTENT})
+;exten => s,n,Set(__verilerTammi=${VERILER_TAMMI})
+exten => s,n,Gosub(yaniti-cal,s,1)
+exten => s,n,Return()
+
+[yeni-randevu-calinacak-kayit]
+exten => s,1,NoOp(çalınan metin bölümü)
+exten => s,n,GotoIf($[${EXISTS(${hizmetBulunamadi})}]?hizmetyok:hizmetvar)
+exten => s,n(hizmetvar),Set(ENCODED_DATA_2=${SHELL(echo -n 'Randevu almak istediğiniz hizmeti birkaç kelime ile söyler misiniz' | base64)})
+exten => s,n(hizmetyok),Set(ENCODED_DATA_2=${calinacakMetin})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA_2})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+
+
+
+[yeni-randevu-menusu]
+exten => s,1,NoOp("Yeni Randevu Menüsü: ${salonid} müşteri id '${userId}' (uzunluk: ${LEN(${userId})})")
+exten => s,n,Set(GLOBAL(userId)=${FILTER(0-9,${userId})})
+exten => s,n,Set(userId=${FILTER(0-9,${userId})})  ; BoÅŸluklardan veya karakterlerden arÄ±ndÄ±r
+exten => s,n,NoOp("Temizlenmiş UserId: '${userId}' (uzunluk: ${LEN(${userId})})")  ; Yeniden logla
+exten => s,n,Set(userIdLength=${LEN(${userId})})
+exten => s,n,GotoIf($[${EXISTS(${userId})}=0]?yenimusteridanisan:mevcut)
+exten => s,n(yenimusteridanisan),Goto(yeni-kayit,s,1)
+exten => s,n(mevcut),Set(ENCODED_DATA_2=${SHELL(echo -n 'Randevu almak istediğiniz hizmeti birkaç kelime ile söyler misiniz? Örneğin protez tırnak diyebilirsiniz.' | base64)})
+
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA_2})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/sesliyanit.php,${salonid},${userId})
+;exten => s,n,NoOp(Randevu için uygun tarih ${uyguntarih})
+
+;exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${calinacakMetin})
+;exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID}:::wq:)
+
+;exten => s,n,GotoIf($["${hizmetBulunamadi}" = "bulunamadi"]?bastanbasla)
+;exten => s,n,GotoIf($["${uyguntarih}" != ""]?var:yok)
+
+;exten => s,n(bastanbasla),NoOp(Bulunamadi etiketi çalıştı)
+;exten => s,n(bastanbasla),Dial(Local/s@${CONTEXT},,g)
+;exten => s,n(bastanbasla),Goto(yeni-randevu-menusu,s,1)
+;exten => s,n(yok),Goto(operator-bagla,s,1)
+;exten => s,n(var),WaitExten(3)
+
+;exten => 1,1,AGI(/var/lib/asterisk/agi-bin/randevuolustur.php,${uyguntarih},${hizmetid},${personelid},${salonid},${userId},${sure},${fiyat},${odaid})
+;exten => s,n,GotoIf("${AGISTATUS}"="SUCCESS"?success:failure)
+exten => s,n,NoOp(AGISTATUS: ${AGISTATUS})
+exten => s,n,GotoIf($["${HIZMETYOK}"="EVET"]?hizmetyok:hizmetvar)
+exten => s,n(hizmetyok),Dial(Local/s@${CONTEXT},,g)
+exten => s,n(hizmetyok),Goto(yeni-randevu-menusu,s,1)
+exten => s,n(hizmetvar),GotoIf($["${RANDEVUOLUSTU}" = "EVET"]?success:failure)
+
+exten => s,n(success),Set(ENCODED_SONUC=${SHELL(echo -n 'Randevu talebinizi oluşturdum ve size bilgilendirme esemesi gönderdim. Randevunuza on beş dakika önce gelmenizi rica ederiz. Bizi tercih ettiğiniz için teşekkür eder sağlıklı günler dileriz' | base64)})
+exten => s,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_SONUC})
+exten => s,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n(success),Hangup();
+;exten => s,n(failure),Set(ENCODED_SONUC=${SHELL(echo -n 'Şu an sistemde bir sorun mevcut.' | base64)})
+;exten => s,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_SONUC})
+;exten => s,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+;exten => s,n(failure),Dial(Local/${operatorKanali}@from-queue/n)
+exten => s,n(failure),Goto(operator-bagla,s,1)
+;Zaman aşımı durumu için t etiketi ekleyin
+
+exten => t,1,NoOp("Zaman aşımı gerçekleşti, yeniden başlatılıyor")
+exten => t,n,Set(SONRAKITARIH=${SHELL(LC_TIME=tr_TR.UTF-8 date -d "${uyguntarih} +1 day" +"%d %B")})
+exten => t,n,Set(ENCODED_TEXT_FOR_NEXT_DATE=${SHELL(echo -n 'Randevu almak istediğiniz tarihi söyler misiniz? Örneğin ${SONRAKITARIH} diyebilirsiniz.' | base64)})
+exten => t,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_TEXT_FOR_NEXT_DATE})
+exten => t,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => t,n,Goto(yeni-randevu-menusu,s,1)
+
+; Hata durumu için e etiketi ekleyin
+exten => e,1,NoOp("Hata durumu oluştu, yeniden başlatılıyor")
+exten => e,n,Set(ENCODED_SONUC=${SHELL(echo -n 'Eksik veya hatalı bir tuşlama yaptınız.' | base64)})
+exten => e,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_SONUC})
+exten => e,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => e,n,Goto(yeni-randevu-menusu,s,1)
+
+
+
+[randevu-iptal-menusu]
+exten => s,1,NoOp(Randevu İptal Menüsü)
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/randevuiptali.php,${userId})
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${calinacakKayit})
+exten => s,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n,WaitExten(5)  ; 5 saniye bekle
+
+; 1 e basıldığında iptal et 
+exten => 1,1,AGI(/var/lib/asterisk/agi-bin/randevuiptalet.php,${randevuid})
+exten => 1,n,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${calinacakKayit})
+exten => 1,n,Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => 1,n,GotoIf($["${AGISTATUS}"="SUCCESS"]?success:failure)
+exten => 1,n(success),Hangup()
+exten => 1,n(failure),Goto(operator-bagla,s,1)
+
+; 2 tuÅŸuna basÄ±ldÄ±ÄŸÄ±nda operatÃ¶re baÄŸlanacak
+exten => 2,1,AGI(/var/lib/asterisk/agi-bin/pollysimple.php,Sizi operatÃ¶re aktarÄ±yorum)
+exten => 2,n,Goto(operator-bagla,s,1)
+
+exten => 3,1,Goto(ana-menu,s,1)
+exten => s,n,Hangup()
+
+[odeme-hatirlatmasi]
+exten => s,1,NoOp(Ödeme Hatırlatması)
+exten => s,n,AGI(/var/lib/asterisk/agi-bin/alacakbul.php)
+[custom-queue-failover]
+exten => s,1,NoOp(Failover çağrısı başladı)
+exten => s,2,Dial(SIP/02323130031/905412948144,30)
+exten => s,3,Hangup()
+[yol-tarifi]
+exten => s,1,AGI(/var/lib/asterisk/agi-bin/yoltarifigonder.php,${salonid},${userId})
+exten => s,n,Set(AGISTATUS_CLEANED=${AGISTATUS:0}) ; Boşlukları temizle
+exten => s,n,Verbose(1, AGISTATUS DEĞERİ: "${AGISTATUS_CLEANED}")
+exten => s,n,GotoIf($["${AGISTATUS_CLEANED}" = "SUCCESS"]?success:failure)
+exten => s,n(success),Set(ENCODED_DATA=${SHELL(echo -n 'Yol tarifi için sizi esemes ile bilgilendirdim. Ana menüye dönmek için sıfırı tuşlayınız.' | base64)})
+exten => s,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+;exten => s,n(failure),Set(ENCODED_DATA=${SHELL(echo -n 'Şu an sistemde bir sorun mevcut. Lütfen daha sonra tekrar deneyiniz. Menüye dönmek için sıfırı tuşlayınız.' | base64)})
+;exten => s,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+;exten => s,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n(success),WaitExten(2)
+exten => 0,1,Goto(ana-menu,s,1)
+
+[eczane-yol-tarifi]
+exten => s,1,NoOp(User id ${userId})
+exten => s,n,GotoIf($[${EXISTS(${userId})}=0]?yenimusteridanisan:mevcut)
+exten => s,n(yenimusteridanisan),Goto(yeni-kayit-eczane,s,1)
+
+exten => s,n(mevcut),AGI(/var/lib/asterisk/agi-bin/eczaneYolTarifiGonder.php,${salonid},${userId})
+exten => s,n,Set(AGISTATUS_CLEANED=${AGISTATUS:0}) ; Boşlukları temizle
+exten => s,n,Verbose(1, AGISTATUS DEĞERİ: "${AGISTATUS_CLEANED}")
+exten => s,n,GotoIf($["${AGISTATUS_CLEANED}" = "SUCCESS"]?success:failure)
+exten => s,n(success),Set(ENCODED_DATA=${SHELL(echo -n 'Yol tarifiniz esemes olarak telefonunuza gönderildi. Eczanemize bekler, sağlıklı ve güzel günler dileriz.' | base64)})
+exten => s,n(success),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+exten => s,n(success),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+;exten => s,n(failure),Set(ENCODED_DATA=${SHELL(echo -n 'Şu an sistemde bir sorun mevcut. Lütfen daha sonra tekrar deneyiniz. Menüye dönmek için sıfırı tuşlayınız.' | base64)})
+;exten => s,n(failure),AGI(/var/lib/asterisk/agi-bin/pollysimple.php,${ENCODED_DATA})
+;exten => s,n(failure),Background(/var/spool/asterisk/monitor/polly-${UNIQUE_ID})
+exten => s,n(success),Hangup()

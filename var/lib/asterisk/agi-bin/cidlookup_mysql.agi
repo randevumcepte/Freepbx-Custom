@@ -1,0 +1,68 @@
+#!/usr/bin/php -q
+<?php
+  $restrict_mods = true;
+  if (!@include_once(getenv('FREEPBX_CONF') ? getenv('FREEPBX_CONF') : '/etc/freepbx.conf')) {
+    include_once('/etc/asterisk/freepbx.conf');
+  }
+
+ $agidir   = FreePBX::Config()->get('ASTAGIDIR');
+ $lookupid = $argv[1];
+ $number   = $argv[2];
+ $cidlook = FreePBX::Cidlookup()->getOne($lookupid);
+ require_once $agidir."/phpagi.php";
+ $agi      = new AGI();
+  // get all infromation from database instead of passing through AGI
+
+  $host     = trim($cidlook['mysql_host']);
+  $port     = empty(trim($cidlook['mysql_port'])) ? "3306" : trim($cidlook['mysql_port']);
+  $username = trim($cidlook['mysql_username']);
+  $password = trim($cidlook['mysql_password']);
+  $dbname   = trim($cidlook['mysql_dbname']);
+  $charset  = empty(trim($cidlook['mysql_charset'])) ? "" : ";charset=".trim($cidlook['mysql_charset']);
+  $query    = str_replace('[NUMBER]', $number, $cidlook['mysql_query']);
+  $error    = "";
+  $error    = empty($host)      ? $error.", host"      : $error."";
+  $error    = empty($dbname)    ? $error.", dbname"    : $error."";
+  $error    = empty($username)  ? $error.", username"  : $error."";
+  $error    = empty($query)     ? $error.", query"     : $error."";
+
+  if($error != ""){
+    $agi->verbose('--- Error: Missing argument'.$error.'. ----');
+    exit(1);
+  }
+
+  try {
+    $remotepdo    = new PDO("mysql:host=$host;port=$port;dbname=$dbname$charset", $username, $password);
+    $remotepdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+  } catch (Exception $e) {
+      dbug($e->getMessage());
+  }
+
+  try {
+    $stm    = $remotepdo->prepare($query);
+  } catch (Exception $e) {
+    dbug($e->getMessage());
+    } 
+
+  try {
+    $stm->execute();
+    $ret    = $stm->fetch(\PDO::FETCH_ASSOC);
+  } catch (Exception $e) {
+    dbug($e->getMessage());
+    }
+
+  foreach($ret as $key => $val){
+    $name   = $val;
+    break;
+  }
+
+  if(isset($name) && is_string($name)){
+      $agi->set_variable("CALLERID(name)", $name);
+  }
+  else{
+    $agi->verbose('--- Name not found ----');
+  }
+  
+  $pdo->close(); 
+  exit(0);
+?>
