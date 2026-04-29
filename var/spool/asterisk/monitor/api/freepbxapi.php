@@ -49,6 +49,19 @@ if ($offset < 0)   $offset = 0;
 $params = [];
 $whereClauses = [];
 
+// GÜVENLİK: Salon kimliği (did/dahili/trunk) verilmemisse bos don.
+// Aksi halde tum CDR tablosu (tum isletmelerin kayitlari) sizar.
+if (empty($did) && empty($dahiliArray) && empty($trunk)) {
+    echo json_encode([
+        'data'     => [],
+        'total'    => 0,
+        'limit'    => $limit,
+        'offset'   => $offset,
+        'has_more' => false,
+    ], JSON_PRETTY_PRINT);
+    exit;
+}
+
 // Sabit numara (did) verilmişse SADECE buna göre filtrele.
 // Dahili numaralar isletmeler arasinda paylasilabildigi icin
 // dahili eslesmesi alakasiz isletmelerin kayitlarini siziyordu.
