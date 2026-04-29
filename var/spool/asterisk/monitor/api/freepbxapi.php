@@ -49,22 +49,20 @@ if ($offset < 0)   $offset = 0;
 $params = [];
 $whereClauses = [];
 
-if (!empty($dahiliArray)) {
+// Sabit numara (did) verilmişse SADECE buna göre filtrele.
+// Dahili numaralar isletmeler arasinda paylasilabildigi icin
+// dahili eslesmesi alakasiz isletmelerin kayitlarini siziyordu.
+// - Gelen aramalar: cdr.did = sabit numara
+// - Giden aramalar: outbound_cnum / cnum = sabit numara (trunk outbound CID)
+if (!empty($did)) {
+    $whereClauses[] = "(did = :did OR outbound_cnum = :did OR cnum = :did)";
+    $params[':did'] = $did;
+} else if (!empty($dahiliArray)) {
     $regex = implode('|', array_map('preg_quote', $dahiliArray));
-    $dahiliWhere = "(
+    $whereClauses[] = "(
         channel    REGEXP 'PJSIP/($regex)-'
         OR dstchannel REGEXP 'PJSIP/($regex)-'
     )";
-
-    if (!empty($did)) {
-        $whereClauses[] = "($dahiliWhere OR did = :did)";
-        $params[':did'] = $did;
-    } else {
-        $whereClauses[] = $dahiliWhere;
-    }
-} else if (!empty($did)) {
-    $whereClauses[] = "did = :did";
-    $params[':did'] = $did;
 }
 
 if (!empty($trunk)) {
