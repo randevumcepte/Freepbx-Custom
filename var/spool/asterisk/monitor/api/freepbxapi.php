@@ -171,7 +171,7 @@ try {
             $year  = date('Y', strtotime($row['calldate']));
             $month = date('m', strtotime($row['calldate']));
             $day   = date('d', strtotime($row['calldate']));
-            $row['recording_path'] = "https://santral.randevumcepte.com.tr/monitor/$year/$month/$day/{$row['recording_path']}";
+            $row['recording_path'] = "https://santral.randevumcepte.com.tr/monitor/$year/$month/$day/{$row['recordingfile']}";
         } else {
             $row['recording_path'] = null;
         }
