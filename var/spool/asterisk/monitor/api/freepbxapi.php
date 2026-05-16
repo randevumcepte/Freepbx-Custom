@@ -43,6 +43,9 @@ if ($limit  < 1)   $limit  = 50;
 if ($limit  > 500) $limit  = 500;
 if ($offset < 0)   $offset = 0;
 
+// linkedid bazli dedupe sonrasi yetecek kadar fetch et (her cagri 2-3 leg uretebilir)
+$fetchLimit = $limit * 3;
+
 // -------------------------------------------------------
 // WHERE koşulları
 // -------------------------------------------------------
@@ -62,12 +65,23 @@ if (empty($did) && empty($dahiliArray) && empty($trunk)) {
     exit;
 }
 
-// Sabit numara (did) verilmişse SADECE buna göre filtrele.
-// Dahili numaralar isletmeler arasinda paylasilabildigi icin
-// dahili eslesmesi alakasiz isletmelerin kayitlarini siziyordu.
+// Sabit numara (did) ve/veya dahili listesi ile salon kapsamına filtrele.
 // - Gelen aramalar: cdr.did = sabit numara
 // - Giden aramalar: outbound_cnum / cnum = sabit numara (trunk outbound CID)
-if (!empty($did)) {
+// - Ext-local (kuyruktan dahiliye düşen cevap kayıtları): did boş olur,
+//   bu yüzden dahili channel/dstchannel REGEXP eşleşmesi de ekleniyor.
+//   Aksi halde dahilinin cevap verdiği görüşmeler ve ses kayıtları listede çıkmıyor.
+if (!empty($did) && !empty($dahiliArray)) {
+    $regex = implode('|', array_map('preg_quote', $dahiliArray));
+    $whereClauses[] = "(
+        did = :did
+        OR outbound_cnum = :did
+        OR cnum = :did
+        OR channel    REGEXP 'PJSIP/($regex)-'
+        OR dstchannel REGEXP 'PJSIP/($regex)-'
+    )";
+    $params[':did'] = $did;
+} else if (!empty($did)) {
     $whereClauses[] = "(did = :did OR outbound_cnum = :did OR cnum = :did)";
     $params[':did'] = $did;
 } else if (!empty($dahiliArray)) {
@@ -159,11 +173,41 @@ try {
     }
 
     // LIMIT ve OFFSET integer olarak bağlanmalı
-    $stmt->bindValue(':limit',  $limit,  PDO::PARAM_INT);
+    // Dedupe sonrasi yeterli kayit kalmasi icin fetchLimit kullaniyoruz.
+    $stmt->bindValue(':limit',  $fetchLimit,  PDO::PARAM_INT);
     $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
 
     $stmt->execute();
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // linkedid bazinda dedupe: ayni cagrinin birden fazla leg'i (operator-bagla + ext-local)
+    // beraber dondugu icin, ses kaydi olan / ext-local olan / en bilgilendirici satiri secelim.
+    // Tercih sirasi: recordingfile dolu > dcontext=ext-local > digerleri (ilk gelen).
+    $deduped = [];
+    foreach ($data as $row) {
+        $lid = $row['linkedid'] ?? '';
+        if ($lid === '') { $deduped[] = $row; continue; }
+
+        if (!isset($deduped[$lid])) {
+            $deduped[$lid] = $row;
+            continue;
+        }
+
+        $cur = $deduped[$lid];
+        $curScore = (!empty($cur['recordingfile']) ? 2 : 0) + (($cur['dcontext'] ?? '') === 'ext-local' ? 1 : 0);
+        $newScore = (!empty($row['recordingfile']) ? 2 : 0) + (($row['dcontext'] ?? '') === 'ext-local' ? 1 : 0);
+        if ($newScore > $curScore) {
+            $deduped[$lid] = $row;
+        }
+    }
+    $data = array_values($deduped);
+
+    // SQL'den fetchLimit (limit*3) cektik; istemciye sadece limit kadar gonder.
+    // limit'ten fazla deduped sonuc varsa has_more=true demektir.
+    $hasMoreAfterDedupe = count($data) > $limit;
+    if ($hasMoreAfterDedupe) {
+        $data = array_slice($data, 0, $limit);
+    }
 
     // Ses kayıt yolu ekle
     foreach ($data as &$row) {
@@ -178,12 +222,16 @@ try {
     }
 
     // Flutter'ın ihtiyaç duyduğu meta bilgiler
+    // has_more: dedupe sonrasi limit'i astiysa true; aksi halde SQL total'a gore karar ver.
+    // (totalCount dedupe'tan onceki ham CDR sayisidir; kesin sayfalama sayisi degildir.)
+    $hasMore = $hasMoreAfterDedupe || (($offset + $fetchLimit) < $totalCount);
+
     echo json_encode([
         'data'       => $data,
         'total'      => $totalCount,
         'limit'      => $limit,
         'offset'     => $offset,
-        'has_more'   => ($offset + count($data)) < $totalCount,
+        'has_more'   => $hasMore,
     ], JSON_PRETTY_PRINT);
 
 } catch (PDOException $e) {
