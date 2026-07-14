@@ -4,18 +4,31 @@ const config = require('./config');
 const { buildSystemPrompt } = require('./prompts');
 const { toolDefinitions, executeTool } = require('./tools');
 
-// Bir cagriya karsilik gelen konusma durumu. Her transcript (STT ciktisi) handleUtterance'a
-// verilir; iceride Claude tool-calling dongusu doner ve SESLI okunacak metni + kontrol
-// sinyalini (transfer/hangup) dondurur. tarihParser.js YOK — tarih/hizmet cikarimi modelde.
+// Metni CUMLE CUMLE akitan yardimci: streaming LLM ciktisindan cumle sinirina gelince
+// (. ! ? … veya yeni satir) o cumleyi hemen onSentence'a verir. Boylece ilk cumle
+// bitince TTS+calma baslar, model gerisini uretirken ses calar -> AKICILIK.
+function makeChunker(onSentence) {
+  let buf = '';
+  const flushComplete = () => {
+    // Cumle sonu noktalamasindan sonrasini kes. ("15:30" gibi icteki : tetiklemez.)
+    const m = buf.match(/^[\s\S]*?[.!?…]+/);
+    if (!m) return false;
+    const s = buf.slice(0, m[0].length).trim();
+    buf = buf.slice(m[0].length);
+    if (s) onSentence(s);
+    return true;
+  };
+  return {
+    push(delta) { buf += delta; while (flushComplete()) { /* birden fazla cumle olabilir */ } },
+    flush() { const s = buf.trim(); buf = ''; if (s) onSentence(s); },
+  };
+}
+
+// Bir cagriya karsilik gelen konusma durumu. tarihParser.js YOK — tarih/hizmet cikarimi modelde.
 class Dialog {
   constructor(callContext) {
-    // callContext: { salonAdi, salonId, userId, musteriAdi, hizmetler }
-    this.client = new Anthropic(); // ANTHROPIC_API_KEY veya `ant auth login` profili
-    this.ctx = {
-      ...callContext,
-      lastAvailability: new Map(), // salonHizmetId -> backend slot (oda/personel/uygun saat)
-      control: null,               // 'transfer' | 'hangup'
-    };
+    this.client = new Anthropic();
+    this.ctx = { ...callContext, lastAvailability: new Map(), control: null };
     this.system = buildSystemPrompt({
       ...callContext,
       nowText: config.istanbulNow().toLocaleString('tr-TR', {
@@ -26,35 +39,39 @@ class Dialog {
     this.messages = [];
   }
 
-  // Karsilama cumlesi (ilk anons). Model'e "kullanici hatta" diyerek acilis urettiriyoruz.
-  async opening() {
-    return this._run({ role: 'user', content: '(Musteri hatta baglandi. Kisa bir karsilama yap ve nasil yardimci olabilecegini sor.)' });
+  // onSentence(cumle): her cumle hazir oldugunda cagrilir (TTS'e akitmak icin). Opsiyonel;
+  // verilmezse yalnizca tam metin dondurulur (CLI/test icin).
+  async opening(onSentence) {
+    return this._run({ role: 'user', content: '(Musteri hatta baglandi. Kisa bir karsilama yap ve nasil yardimci olabilecegini sor.)' }, onSentence);
   }
 
-  // STT'den gelen musteri cumlesi.
-  async handleUtterance(transcript) {
+  async handleUtterance(transcript, onSentence) {
     const text = (transcript || '').trim();
-    return this._run({ role: 'user', content: text.length ? text : '(...)' });
+    return this._run({ role: 'user', content: text.length ? text : '(...)' }, onSentence);
   }
 
-  async _run(userTurn) {
+  async _run(userTurn, onSentence) {
     this.messages.push(userTurn);
+    const chunker = onSentence ? makeChunker(onSentence) : null;
 
-    // Manuel tool-use dongusu — tool zinciri bitene kadar don.
     for (let guard = 0; guard < 8; guard++) {
-      const resp = await this.client.messages.create({
-        model: config.claude.model,       // claude-opus-4-8
+      const stream = this.client.messages.stream({
+        model: config.claude.model,       // claude-sonnet-5 (denge: akici + kaliteli)
         max_tokens: 1024,
         system: this.system,
         tools: this.tools,
-        // Sesli cagri: dusuk gecikme onemli, tur basit (NLU + tool karari) -> effort low,
-        // thinking kapali (opus-4-8'de thinking varsayilan kapali). Gecikme kritikse
-        // model 'claude-haiku-4-5' veya 'claude-sonnet-5' ile de denenebilir.
-        output_config: { effort: 'low' },
+        output_config: { effort: 'low' }, // sesli tur: dusuk gecikme
         messages: this.messages,
       });
 
+      let spoken = '';
+      stream.on('text', (delta) => { spoken += delta; if (chunker) chunker.push(delta); });
+
+      const resp = await stream.finalMessage();
       this.messages.push({ role: 'assistant', content: resp.content });
+
+      // Bu turda uretilen (varsa dolgu) cumleyi kapat -> tool beklerken calar.
+      if (chunker) chunker.flush();
 
       if (resp.stop_reason === 'tool_use') {
         const toolResults = [];
@@ -69,14 +86,13 @@ class Dialog {
           });
         }
         this.messages.push({ role: 'user', content: toolResults });
-        continue; // model tool sonuclariyla devam etsin
+        continue;
       }
 
-      // Bitti: sesli okunacak metni topla.
-      const spoken = resp.content.filter(b => b.type === 'text').map(b => b.text).join(' ').trim();
-      return { text: spoken, control: this.ctx.control };
+      return { text: spoken.trim(), control: this.ctx.control };
     }
 
+    if (chunker) chunker.flush();
     return { text: 'Sizi operatore aktariyorum.', control: 'transfer' };
   }
 }

@@ -25,17 +25,20 @@ async function main() {
   const dialog = new Dialog(callContext);
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
-  const say = (t) => console.log(`\n\x1b[36mASISTAN:\x1b[0m ${t}\n`);
-  const ask = () => rl.question('\x1b[33mMUSTERI:\x1b[0m ', onLine);
+  // onSentence: her cumle uretildikce akarak yaz (canlida bu an TTS+calma tetiklenir).
+  const stream = (s) => process.stdout.write(`\x1b[36m${s}\x1b[0m `);
+  const ask = () => rl.question('\n\x1b[33mMUSTERI:\x1b[0m ', onLine);
 
-  const opening = await dialog.opening();
-  say(opening.text);
+  process.stdout.write('\x1b[36mASISTAN:\x1b[0m ');
+  const opening = await dialog.opening(stream);
+  process.stdout.write('\n');
   if (opening.control) return finish(opening.control);
   ask();
 
   async function onLine(line) {
-    const res = await dialog.handleUtterance(line);
-    say(res.text);
+    process.stdout.write('\x1b[36mASISTAN:\x1b[0m ');
+    const res = await dialog.handleUtterance(line, stream);
+    process.stdout.write('\n');
     if (res.control) return finish(res.control);
     ask();
   }

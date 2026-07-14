@@ -21,7 +21,9 @@ module.exports = {
     format: 'slin16', // 16-bit signed linear PCM, 16 kHz
   },
   claude: {
-    model: process.env.CLAUDE_MODEL || 'claude-opus-4-8',
+    // Denge: Opus'a yakin Turkce kalite + belirgin dusuk gecikme (akicilik).
+    // Daha hizli: claude-haiku-4-5 | En zeki: claude-opus-4-8
+    model: process.env.CLAUDE_MODEL || 'claude-sonnet-5',
   },
   stt: {
     language: process.env.STT_LANGUAGE || 'tr-TR',

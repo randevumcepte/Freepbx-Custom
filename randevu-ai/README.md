@@ -18,6 +18,7 @@ Eski akıştaki her hata tek bir mimari seçimin semptomuydu:
 | Fuzzy string hizmet eşleştirme, yanlış eşleşme | Model niyet + hizmet eşleştirmeyi bağlamla yapar |
 | Sonsuz döngü, operatöre düşmez | Model akışı yönetir + `operatore_aktar` tool'u |
 | Barge-in yok | STT interim → çalmayı kes (barge-in) |
+| Tam yanıt bekle sonra çal (uzun sessizlik) | **Yanıt stream + cümle-cümle TTS**: ilk cümle biter bitmez çalar; dolgu ("bir bakıyorum") tool beklerken çalar |
 
 ---
 
@@ -119,14 +120,14 @@ asterisk -rx "dialplan reload"
 - **`santralkarsilamametni` alan eşlemesi:** canlı yanıtla birebir doğrula (`callContext.js`).
 - **Paket akışı:** çok-hizmetli paket randevusu (`tools.js` — array_fill + `paketBilgi`).
 - **TTS:** Google TTS motoru (`tts.js` — şu an Polly).
-- **Latency:** gerekirse `dialog.js`'te model `claude-sonnet-5`/`claude-haiku-4-5` ile denenebilir.
+- **Latency:** varsayilan model `claude-sonnet-5` (denge). Yanit stream + cumle-cumle TTS + barge-in UYGULANDI. Daha hizli istenirse `.env` CLAUDE_MODEL=claude-haiku-4-5; en zeki icin claude-opus-4-8.
 
 ---
 
 ## Yaklaşık maliyet (kaba)
 
 - **STT:** Google ~0,016–0,024 $/dk.
-- **LLM:** Claude Opus 4.8 tur başına birkaç bin token; kısa randevu görüşmesi (~6–10 tur) ≈ 0,05–0,20 $ mertebesi. Latency/maliyet için `sonnet-5`/`haiku-4-5` daha ucuz.
+- **LLM:** Claude Sonnet 5 (varsayılan) tur başına birkaç bin token; kısa randevu görüşmesi (~6–10 tur) ≈ 0,03–0,12 $ mertebesi. Daha ucuz/hızlı: `haiku-4-5`. En zeki: `opus-4-8`.
 - **TTS:** Polly ~0,004 $/1k karakter.
 
 Bir randevu görüşmesi tipik olarak birkaç dakika ve ~0,10–0,40 $ toplam mertebesindedir; salon çağrı hacmi için yönetilebilir.

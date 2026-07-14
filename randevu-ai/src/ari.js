@@ -19,6 +19,7 @@ class CallSession {
     this.callId = channel.id;
     this.stt = null;
     this.playing = false;
+    this.playQueue = [];   // TTS+calma icin cumle kuyrugu (streaming'den doluyor)
     this.finished = false;
   }
 
@@ -36,9 +37,9 @@ class CallSession {
     this._pcmSink = (pcm) => { if (this.stt) this.stt.write(pcm); };
     this.rtp.on('pcm', this._pcmSink);
 
-    // Karsilama
-    const opening = await this.dialog.opening();
-    await this._say(opening.text);
+    // Karsilama (cumleler geldikce kuyruga -> calinir)
+    const opening = await this.dialog.opening((s) => this._enqueueSpeak(s));
+    await this._drain();
     if (opening.control) return this._applyControl(opening.control);
 
     this._listen();
@@ -63,41 +64,67 @@ class CallSession {
     if (this.finished) return;
     this.stt = new SttStream({
       onInterim: (t) => {
-        // Barge-in: asistan konusurken musteri konusmaya baslarsa calmayi kes.
-        if (this.playing && t) this._stopPlayback();
+        // Barge-in: asistan konusurken musteri konusmaya baslarsa calmayi kes + kuyrugu bosalt.
+        if ((this.playing || this.playQueue.length) && t) this._bargeIn();
       },
       onFinal: async (transcript, err) => {
         this.stt = null;
         if (err) return this._applyControl('transfer');
-        const res = await this.dialog.handleUtterance(transcript);
-        await this._say(res.text);
+        // Yanit stream olur; cumleler geldikce kuyruga girer ve calar (uretimle es zamanli).
+        const res = await this.dialog.handleUtterance(transcript, (s) => this._enqueueSpeak(s));
+        await this._drain();
         if (res.control) return this._applyControl(res.control);
         this._listen(); // sonraki tur
       },
     });
   }
 
-  async _say(text) {
-    if (!text || this.finished) return;
+  // Cumleyi kuyruga al ve pompayi tetikle (streaming'den cagrilir).
+  _enqueueSpeak(text) {
+    const t = (text || '').trim();
+    if (!t || this.finished) return;
+    this.playQueue.push(t);
+    this._pump();
+  }
+
+  // Kuyruktaki cumleleri sirayla (ust uste binmeden) calar.
+  async _pump() {
+    if (this.playing || this.finished) return;
+    this.playing = true;
+    while (this.playQueue.length && !this.finished) {
+      await this._playOne(this.playQueue.shift());
+    }
+    this.playing = false;
+  }
+
+  async _playOne(text) {
     try {
       const media = await speak(text, this.callId);
-      this.playing = true;
       const playback = await this.channel.play({ media });
-      await new Promise((resolve) => {
-        playback.once('PlaybackFinished', resolve);
-        this._activePlayback = playback;
-      });
-    } catch (e) {
-      // TTS/cal hatasi: sessizce gec, dongude tikanma.
+      this._activePlayback = playback;
+      await new Promise((resolve) => playback.once('PlaybackFinished', resolve));
+    } catch (_) {
+      // TTS/cal hatasi: sessizce gec.
     } finally {
-      this.playing = false;
       this._activePlayback = null;
     }
   }
 
-  _stopPlayback() {
+  // Barge-in: caldaki cumleyi kes, bekleyen cumleleri at.
+  _bargeIn() {
+    this.playQueue.length = 0;
     if (this._activePlayback) { try { this._activePlayback.stop(); } catch (_) {} }
-    this.playing = false;
+  }
+
+  // Kuyruk bosalana kadar bekle (bir sonraki tur dinlemeye gecmeden once).
+  _drain() {
+    return new Promise((resolve) => {
+      const t = setInterval(() => {
+        if (this.finished || (!this.playing && this.playQueue.length === 0)) {
+          clearInterval(t); resolve();
+        }
+      }, 40);
+    });
   }
 
   async _applyControl(control) {
