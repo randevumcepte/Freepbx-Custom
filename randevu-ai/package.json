@@ -1,0 +1,22 @@
+{
+  "name": "randevu-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LLM tabanli sesli randevu asistani (Asterisk ARI + streaming STT + Claude tool-calling + TTS). Eski AGI monoliti sesliYanitOptimize.php'nin yerini almak icin PROTOTIP.",
+  "type": "commonjs",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dialog": "node test/dialog-cli.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0",
+    "@google-cloud/speech": "^6.7.0",
+    "ari-client": "^2.2.0",
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
