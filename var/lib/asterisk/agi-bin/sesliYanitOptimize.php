@@ -11,12 +11,65 @@ ini_set('log_errors', 1);
 ini_set('error_log', '/tmp/php_agi_errors.log');
 $agi = new AGI();
 
+// Debug log dosyası — her çağrıda tek dosya (çağrı başı timestamp ile)
+$DEBUG_LOG_DIR = '/var/log/sesliYanit';
+if (!is_dir($DEBUG_LOG_DIR)) {
+    @mkdir($DEBUG_LOG_DIR, 0777, true);
+}
+// /var/log yazılamazsa /tmp'a düş
+if (!is_dir($DEBUG_LOG_DIR) || !is_writable($DEBUG_LOG_DIR)) {
+    $DEBUG_LOG_DIR = '/tmp';
+}
+$DEBUG_LOG_FILE = $DEBUG_LOG_DIR . '/sesliYanit_debug_' . date('Ymd_His') . '_' . getmypid() . '.log';
+
+// Dosyayı baştan oluştur (izin sorununu erken yakala)
+$fpTest = @fopen($DEBUG_LOG_FILE, 'a');
+if ($fpTest === false) {
+    // /var/log yazılamıyorsa /tmp'a düş
+    $DEBUG_LOG_FILE = '/tmp/sesliYanit_debug_' . date('Ymd_His') . '_' . getmypid() . '.log';
+    $fpTest = @fopen($DEBUG_LOG_FILE, 'a');
+}
+if ($fpTest !== false) {
+    @chmod($DEBUG_LOG_FILE, 0666);
+    fclose($fpTest);
+}
+
+function debugLog($etiket, $deger = null) {
+    global $DEBUG_LOG_FILE, $agi;
+    $ts = date('Y-m-d H:i:s') . '.' . substr(microtime(), 2, 3);
+
+    // Dosyaya tam içerik (pretty JSON)
+    $dosyaSatir = "[{$ts}] {$etiket}";
+    if ($deger !== null) {
+        if (is_array($deger) || is_object($deger)) {
+            $dosyaSatir .= ': ' . json_encode($deger, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+        } else {
+            $dosyaSatir .= ': ' . $deger;
+        }
+    }
+    $yazildi = @file_put_contents($DEBUG_LOG_FILE, $dosyaSatir . "\n", FILE_APPEND | LOCK_EX);
+    if ($yazildi === false) {
+        @file_put_contents('/tmp/sesliYanit_fallback.log', $dosyaSatir . "\n", FILE_APPEND);
+    }
+
+    // Verbose'a sadece etiket (değer dosyada — JSON virgülleri Asterisk AGI arg parser'ını bozuyor)
+    if (isset($agi) && $agi) {
+        @$agi->verbose("DBG " . $etiket);
+    }
+}
+debugLog('=== YENI CAGRI BASLADI ===');
+debugLog('PHP_VERSION', PHP_VERSION);
+debugLog('WHOAMI', trim(shell_exec('whoami') ?? ''));
+debugLog('LOG_DOSYASI', $DEBUG_LOG_FILE);
+debugLog('ARGV', $GLOBALS['argv'] ?? []);
+
 try{
 
 
         $agi->answer();
        
         
+        $maxDeneme = 3; // Bir adimda 3 basarisiz denemeden sonra operatore aktar (sonsuz dongu engeli)
         $paketBilgisi = null;
         $gonderilecekPaket = null;
         $paket = $argv[5];
@@ -68,7 +121,7 @@ try{
                 $sesDosyasi1 = anonsCal($agi,$paketVarAnonsu,'paketVaranonsu',$argv[2],$sesDosyasi1);
 
 
-                $paketRandevuOnayEvetHayir = kayitAl($agi,$argv[2], "paketRandevusuOnayInput-".$argv[2]."-" . date('YmdHis'),2000);
+                $paketRandevuOnayEvetHayir = kayitAl($agi,$argv[2], "paketRandevusuOnayInput-".$argv[2]."-" . date('YmdHis'),6000,2);
                 $evetHayir = sesiMetneDonustur($paketRandevuOnayEvetHayir);
                 $evetHayirSonuc = evetHayirVaryasyon($evetHayir);
                 $agi->verbose('Evet hayır '.$evetHayir);
@@ -96,46 +149,126 @@ try{
         
         if(!$paketRandevusuOlusturulacak)
         {
+            $hizmetDeneme = 0;
             while(true)
             {
+                if(++$hizmetDeneme > $maxDeneme){
+                    debugLog('HIZMET_MAX_DENEME_OPERATORE', $hizmetDeneme);
+                    $agi->set_variable('HIZMETYOK','HAYIR'); // menuyu restart etme; dialplan failure -> operator-bagla
+                    break;
+                }
                 $randevuAlmakIstediginizHimzetAnonsu = 'Randevu almak istediğiniz hizmeti söyler misiniz?';
 
                 $sesDosyasi2 = anonsCal($agi,$randevuAlmakIstediginizHimzetAnonsu,'randevuAlmakIstediginizHimzetAnonsu',$argv[2],$sesDosyasi2);
               
                 $agi->verbose('Ses Kaydını al '.date('H:i:s')."\n");
-                $hizmetKayitDosyasi = kayitAl($agi,$argv[2], "hizmetSoylemeInput-".$argv[2]."-" . date('YmdHis'),3000);
-                $soylenenHizmet = sesiMetneDonustur($hizmetKayitDosyasi);
-                 $agi->verbose('Ses Kaydını tamamla '.date('H:i:s')."\n");
-                $agi->verbose('Söylenen hizmet '.$soylenenHizmet);
+                $hizmetKayitDosyasi = kayitAl($agi,$argv[2], "hizmetSoylemeInput-".$argv[2]."-" . date('YmdHis'),9000,3);
+                debugLog('HIZMET_KAYIT_DOSYASI', $hizmetKayitDosyasi);
+                $sttSonuc = sesiMetneDonustur($hizmetKayitDosyasi, true);
+                debugLog('HIZMET_STT_SONUC', $sttSonuc);
 
-                if($soylenenHizmet != '')
-                { 
-                    $agi->verbose("ARGV3 RAW: ".$argv[3]); 
+                if (is_array($sttSonuc)) {
+                    $birincilMetin = isset($sttSonuc['metin']) ? $sttSonuc['metin'] : '';
+                    $sttAdaylari = array_merge([$birincilMetin], isset($sttSonuc['alternatifler']) ? $sttSonuc['alternatifler'] : []);
+                } else {
+                    $birincilMetin = is_string($sttSonuc) ? $sttSonuc : '';
+                    $sttAdaylari = [$birincilMetin];
+                }
+
+                // Tüm adayları fonetik alias ile normalize et ve tekilleştir
+                $hizmetAdaylari = [];
+                foreach ($sttAdaylari as $ham) {
+                    $n = is_string($ham) ? fonetikNormalize($ham) : '';
+                    if ($n !== '' && !in_array($n, $hizmetAdaylari, true)) {
+                        $hizmetAdaylari[] = $n;
+                    }
+                }
+                $soylenenHizmet = is_string($birincilMetin) ? fonetikNormalize($birincilMetin) : '';
+
+                debugLog('HIZMET_BIRINCIL_NORMALIZE', $soylenenHizmet);
+                debugLog('HIZMET_ADAYLARI', $hizmetAdaylari);
+                debugLog('HIZMET_LISTESI', array_map(function($h){ return $h['hizmetAdi']; }, $hizmetler));
+
+                $agi->verbose('Ses Kaydını tamamla '.date('H:i:s')."\n");
+                $agi->verbose('Söylenen hizmet (birincil): '.$soylenenHizmet);
+                $agi->verbose('STT adayları: '.implode(' | ', $hizmetAdaylari));
+
+                if(count($hizmetAdaylari) > 0)
+                {
+                    $agi->verbose("ARGV3 RAW: ".$argv[3]);
                     $agi->verbose("JSON ERROR: ".json_last_error_msg());
                     $agi->verbose("HIZMET COUNT: ".count((array)$hizmetler));
 
-                    
-                    
-                    foreach ($hizmetler as $index => $hizmet) {
-                        $agi->verbose("Hizmet {$index}: {$hizmet['hizmetAdi']}, Süre: {$hizmet['sureDk']}dk");
-                        if (mb_stripos(strtolower($hizmet['hizmetAdi']), $soylenenHizmet) !== false){
-                            $agi->verbose('hizmet bulundu şimdi sıra personel seçiminde');
-                            $hizmetId = $hizmet['hizmetId'];
-                            $sure = $hizmet['sureDk'];
-                            $fiyat = $hizmet['fiyat'];
-                            $hizmetPersonelleri = $hizmet['personeller'];
-                            break;
+                    $eslesenHizmet = null;
+                    $eslesenSkor = 0;
+                    $esikDeger = 60; // Minimum %60 benzerlik
+
+                    foreach ($hizmetAdaylari as $aday) {
+                        $adayNorm = turkceNormalize($aday);
+                        if ($adayNorm === '') continue;
+
+                        foreach ($hizmetler as $index => $hizmet) {
+                            $hizmetAdiNorm = turkceNormalize($hizmet['hizmetAdi']);
+
+                            // Birebir (substring) eşleşme: iki yönlü
+                            $birebir = (mb_stripos($hizmetAdiNorm, $adayNorm) !== false)
+                                    || (mb_stripos($adayNorm, $hizmetAdiNorm) !== false);
+                            $skor = $birebir ? 100 : fuzzyHizmetEslestir($aday, $hizmet['hizmetAdi']);
+
+                            $agi->verbose("Aday '{$aday}' vs '{$hizmet['hizmetAdi']}': %{$skor}" . ($birebir ? ' (birebir)' : ''));
+
+                            if ($skor > $eslesenSkor && $skor >= $esikDeger) {
+                                $eslesenSkor = $skor;
+                                $eslesenHizmet = $hizmet;
+                            }
                         }
                     }
+
+                    if ($eslesenHizmet !== null) {
+                        $agi->verbose("En iyi eşleşme: {$eslesenHizmet['hizmetAdi']} (%{$eslesenSkor})");
+                        debugLog('HIZMET_ESLESME', ['hizmet' => $eslesenHizmet['hizmetAdi'], 'skor' => $eslesenSkor, 'id' => $eslesenHizmet['hizmetId']]);
+                        $hizmetId = $eslesenHizmet['hizmetId'];
+                        $sure = $eslesenHizmet['sureDk'];
+                        $fiyat = $eslesenHizmet['fiyat'];
+                        $hizmetPersonelleri = $eslesenHizmet['personeller'];
+                    } else {
+                        debugLog('HIZMET_ESLESME_YOK', ['en_yuksek_skor' => $eslesenSkor]);
+                    }
+
                     if($hizmetId == null){
                         $hizmetiniVeremiyoruzAnonsu = $soylenenHizmet.' hizmetini maalesef veremiyoruz.';
                         $sesDosyasi14 = anonsCal($agi,$hizmetiniVeremiyoruzAnonsu,'hizmetiniVeremiyoruzAnonsu',$argv[2],$sesDosyasi14);
                         $agi->set_variable('HIZMETYOK','EVET');
-
+                        continue;
                     }
-                    else 
+
+                    // Onay adımı: yanlış eşleşmeleri burada yakala
+                    $onaylandi = null;
+                    $onayDeneme = 0;
+                    while (true) {
+                        if(++$onayDeneme > $maxDeneme){ $onaylandi = false; break; }
+                        $onayMetni = $eslesenHizmet['hizmetAdi'].' hizmeti için devam ediyorum, onaylıyor musunuz?';
+                        $sesDosyasiOnay = anonsCal($agi, $onayMetni, 'hizmetOnayAnonsu_'.date('YmdHis'), $argv[2], '');
+                        $onayKayit = kayitAl($agi, $argv[2], "hizmetOnayInput-".$argv[2]."-".date('YmdHis'), 6000, 2);
+                        $onayMetin = sesiMetneDonustur($onayKayit);
+                        $onaySonuc = evetHayirVaryasyon($onayMetin);
+
+                        if ($onaySonuc === 'evet') { $onaylandi = true; break; }
+                        if ($onaySonuc === 'hayır') { $onaylandi = false; break; }
+
+                        $sesDosyasiOnayAnlamadim = anonsCal($agi, 'Sizi anlayamadım', 'siziAnlayamadimAnonsuOnay', $argv[2], $sesDosyasiOnayAnlamadim ?? '');
+                    }
+
+                    if ($onaylandi) {
                         break;
-                } 
+                    }
+
+                    // Onaylanmadı: seçimi sıfırla, hizmet sorusuna dön
+                    $hizmetId = null;
+                    $sure = null;
+                    $fiyat = null;
+                    $hizmetPersonelleri = [];
+                }
 
             }
 
@@ -214,34 +347,46 @@ try{
                     
             }*/
            
+            $tarihDeneme = 0;
             while(true)
             {
+                        if(++$tarihDeneme > $maxDeneme){
+                            debugLog('TARIH_MAX_DENEME_OPERATORE', $tarihDeneme);
+                            $agi->set_variable('HIZMETYOK','HAYIR'); // dialplan failure -> operator-bagla
+                            break;
+                        }
                         $randevuTarihSaatAnonsMetni = "Randevu almak istediğiniz tarih ve saati söyler misiniz?";
                         $sesDosyasi7 = anonsCal($agi, $randevuTarihSaatAnonsMetni, 'randevuTarihSaatBelirtmeAnonsu', $argv[2],$sesDosyasi7);
                         
-                        $randevuTarihSaatKaydi = kayitAl($agi, $argv[2], "randevuTarihSaatInput_".$argv[2]."_".date('YmdHis'), 4000);
-                        
+                        $randevuTarihSaatKaydi = kayitAl($agi, $argv[2], "randevuTarihSaatInput_".$argv[2]."_".date('YmdHis'), 10000, 3);
+
                         // Debug: Kaydın alınıp alınmadığını kontrol et
                         $agi->verbose("Kayıt dosyası: " . $randevuTarihSaatKaydi);
-                        
-                        $randevuTarihSaat = sesiMetneDonustur($randevuTarihSaatKaydi);
-                        
+                        debugLog('TARIH_KAYIT_DOSYASI', $randevuTarihSaatKaydi);
+
+                        $tarihSttAlt = sesiMetneDonustur($randevuTarihSaatKaydi, true);
+                        debugLog('TARIH_STT_TUM_ADAYLAR', $tarihSttAlt);
+                        $randevuTarihSaat = is_array($tarihSttAlt) ? ($tarihSttAlt['metin'] ?? '') : $tarihSttAlt;
+
                         // Debug: Transkripsiyon çıktısını kontrol et
                         $agi->verbose("Transkripsiyon sonucu: " . $randevuTarihSaat);
-                        
+                        debugLog('TARIH_STT_BIRINCIL', $randevuTarihSaat);
+
                         // Transkripsiyon boş mu kontrol et
                         if (empty(trim($randevuTarihSaat))) {
                             $agi->verbose("Transkripsiyon boş! Tekrar deneyin.");
                             continue; // While döngüsünün başına dön
                         }
-                        
+
                         //$tarihSaatParser = new DateParser();
-                        
+
                         // Debug: Parser'ın çalıştığını kontrol et
                         $agi->verbose("DateParser yüklendi, metni parse ediyor: " . $randevuTarihSaat);
-                        
+
                         try {
+                            debugLog('TARIH_PARSER_INPUT', $randevuTarihSaat);
                             $parsedDateTime = parseDateWithChrono($randevuTarihSaat,$agi); //$tarihSaatParser->parseTurkishDate($randevuTarihSaat);
+                            debugLog('TARIH_PARSER_OUTPUT', $parsedDateTime);
                             /*$agi->verbose("Parse edilen ham tarih: " . $parsedDateTime);
                             
                             $validation = $tarihSaatParser->validateDateTime($parsedDateTime);
@@ -268,11 +413,17 @@ try{
                                 
 
                                 $agi->verbose('RANDEVU_TARIH : '. $parsedDateTime);
-                            
+                                debugLog('RANDEVU_BUL_ISTEGI', [
+                                    'salonId' => $argv[1],
+                                    'personelId' => $personelId,
+                                    'hizmetId' => $hizmetId,
+                                    'tarihSaat' => date('Y-m-d H:i',strtotime($parsedDateTime)),
+                                    'turkceGun' => $turkceGun
+                                ]);
 
                                 $uyguntarih = randevuBul(
                                     $argv[1],
-                                    
+
                                     $agi,
                                     $personelId,
                                     $hizmetId,
@@ -280,60 +431,69 @@ try{
                                     $gonderilecekPaket
 
                                 );
+                                debugLog('RANDEVU_BUL_YANIT', $uyguntarih);
                                 if($uyguntarih['success'])
                                 {
+                                    // Backend uygun slotu dondurdu; exact ya da alternatif olabilir
+                                    $uygunTarihSaatStr = isset($uyguntarih['tarihsaat']) && !empty($uyguntarih['tarihsaat'])
+                                        ? $uyguntarih['tarihsaat']
+                                        : date('Y-m-d H:i', strtotime($parsedDateTime));
+                                    $uygunTs = strtotime($uygunTarihSaatStr);
+                                    $uygunIngGun = date('l', $uygunTs);
+                                    $uygunTurkceGun = isset($turkceGunler[$uygunIngGun]) ? $turkceGunler[$uygunIngGun] : $turkceGun;
 
+                                    $alternatifOneri = isset($uyguntarih['alternatifOneri']) && $uyguntarih['alternatifOneri'];
 
-                                    $kontrolSaglamaAnonsu = date('Y-m-d',strtotime($parsedDateTime)).' '.$turkceGun.' günü saat '.date('H:i',strtotime($parsedDateTime)).' için randevunuz oluşturulacaktır. Onaylıyor musunuz?.';
+                                    $dogalIfade = tarihSaatiDogalIfade($uygunTs, $uygunTurkceGun);
 
-
-                                    $sesDosyasi8 = anonsCal($agi,$kontrolSaglamaAnonsu,'randevuKontrolSaglamaAnonsu',$argv[2],$sesDosyasi8);
-                                    
-
-                                    $randevuOnayEvetHayir = kayitAl($agi,$argv[2],"randevuOnayInput-".$argv[2]."-" . date('YmdHis'),2000);
-                                    $randevuevetHayir = sesiMetneDonustur($randevuOnayEvetHayir);
-                                    $randevuevetHayirSonuc = evetHayirVaryasyon($randevuevetHayir);
-
-                                    if($randevuevetHayirSonuc=='evet')
-                                    {
-                                        $secilenPersonel = $personelId;
-                                        if($secilenPersonel == null)
-                                            $secilenPersonel = $uyguntarih['personelid'];
-
-                                        $randevu = randevuolustur($agi,$hizmetId,$secilenPersonel,date('Y-m-d',strtotime($parsedDateTime)),date('H:i:s',strtotime($parsedDateTime)),$argv[2],$argv[1],$sure,$fiyat,null,$gonderilecekPaket);
-                                        if($randevu['success'])
-                                            $randevuOlustu = true;
+                                    if ($alternatifOneri) {
+                                        $kontrolSaglamaAnonsu = 'Belirttiğiniz tarih ve saat için uygun randevu bulunamadı. En yakın uygun randevu '
+                                            . $dogalIfade
+                                            . '. Bu saatte randevunuzu oluşturmamı ister misiniz?';
+                                        $anonsTuru = 'randevuAlternatifSaglamaAnonsu_' . date('YmdHis');
+                                    } else {
+                                        $kontrolSaglamaAnonsu = $dogalIfade
+                                            . ' için randevunuz oluşturulacaktır. Onaylıyor musunuz?';
+                                        $anonsTuru = 'randevuKontrolSaglamaAnonsu_' . date('YmdHis');
                                     }
 
-                                   
-                                    
-                                    /*while(true)
-                                    {
-                                        $anonsAlternatif = date('Y-m-d',strtotime($validation['formatted'])).' '.$turkceGun.' günü saat '.date('H:i',strtotime($parsedDateTime)).' için uygun randevu bulunmaktadır. Randevunuzu oluşturmak istiyor musunuz?';
-                                        /*$evetHayirKayit = kayitAl($agi,$argv[2],'randevuOnayliyorumOnaylamiyorumInput_'.$argv[2]."_".date('YmdHis'),2000);
-                                        $evetHayir = sesiMetneDonustur($evetHayirKayit);
-                                        $evetHayirSonuc = evetHayirVaryasyon($evetHayir);
-                                        if($evetHayirSonuc == 'evet')
-                                        {
-                                             
-                                            
-                                        }
-                                        elseif($evetHayirSonuc == 'hayır')
-                                            break;
-                                        else{
-                                            $siziAnlayamadimAnonsu = 'Sizi anlayamadım';
-                                            $sesDosyasi10 = anonsCal($agi,$siziAnlayamadimAnonsu,'siziAnlayamadimAnonsu',$argv[2],$sesDosyasi10);
+                                    // Her iterasyonda fresh TTS uret (bos string ile)
+                                    $sesDosyasi8 = anonsCal($agi, $kontrolSaglamaAnonsu, $anonsTuru, $argv[2], '');
+
+                                    $randevuOnayEvetHayir = kayitAl($agi, $argv[2], "randevuOnayInput-".$argv[2]."-" . date('YmdHis'), 6000, 2);
+                                    $randevuevetHayir = sesiMetneDonustur($randevuOnayEvetHayir);
+                                    $randevuevetHayirSonuc = evetHayirVaryasyon($randevuevetHayir);
+                                    debugLog('RANDEVU_ONAY_SONUC', ['alternatifOneri' => $alternatifOneri, 'sonuc' => $randevuevetHayirSonuc, 'uygunTarihSaat' => $uygunTarihSaatStr]);
+
+                                    if ($randevuevetHayirSonuc == 'evet') {
+                                        $secilenPersonel = $personelId;
+                                        if ($secilenPersonel == null) {
+                                            $secilenPersonel = $uyguntarih['personelid'];
                                         }
 
-                                    }*/
-                                    
-                                    
+                                        // Oda ataması: backend odaid dondurduyse ilet (takvim_turu=3 ya da personel+oda durumu)
+                                        $secilenOda = (isset($uyguntarih['odaid']) && $uyguntarih['odaid'] !== '' && $uyguntarih['odaid'] !== null)
+                                            ? $uyguntarih['odaid']
+                                            : null;
+
+                                        $randevu = randevuolustur(
+                                            $agi, $hizmetId, $secilenPersonel,
+                                            date('Y-m-d', $uygunTs),
+                                            date('H:i:s', $uygunTs),
+                                            $argv[2], $argv[1], $sure, $fiyat, $secilenOda, $gonderilecekPaket
+                                        );
+                                        if ($randevu['success']) {
+                                            $randevuOlustu = true;
+                                        }
+                                    }
+                                    // onay 'hayir' veya anlasilamadi: while(true) dongusu tarih/saat adimina donecek
                                 }
-                                else  // false dönmesine rağmen buraya girmiyor döngünün başına geçiyor 
-                                {  
-                                    $anonsAlternatif2 = date('Y-m-d',strtotime($parsedDateTime)).' '.$turkceGun.' günü saat '.date('H:i',strtotime($parsedDateTime)).' için maalesef randevu veremiyoruz. ';
-                                    $sesDosyasi_9 = anonsCal($agi,/*base64_decode($uyguntarih['metin'])*/$anonsAlternatif2,'randevuUygunAnonsu',$argv[2],$sesDosyasi_9);
-
+                                else  // Hicbir uygun slot bulunamadi
+                                {
+                                    $reddetMetni = (isset($uyguntarih['metin']) && !empty($uyguntarih['metin']))
+                                        ? base64_decode($uyguntarih['metin'])
+                                        : (tarihSaatiDogalIfade(strtotime($parsedDateTime), $turkceGun) . ' ve sonrası için uygun randevu bulamadık. Lütfen başka bir tarih ve saat söyleyin.');
+                                    $sesDosyasi_9 = anonsCal($agi, $reddetMetni, 'randevuUygunsuzAnonsu_' . date('YmdHis'), $argv[2], '');
                                 }
 
 
@@ -491,25 +651,56 @@ function kayitAlYeni($agi)
     $agi->verbose("⚠️ Transcript zaman aşımı");
     return '';
 }
-function kayitAl($agi,$userId,$dosyaAdi,$kayitSuresi)
+function kayitAl($agi,$userId,$dosyaAdi,$kayitSuresi,$sessizlikSn=3)
 {
     $kayitDosyasi = "/var/spool/asterisk/monitor/".$dosyaAdi;
-    $agi->record_file($kayitDosyasi, "wav", "", $kayitSuresi, 0, false, 2000);
+    // $kayitSuresi  = maksimum kayit suresi (MILISANIYE) — sert ust sinir.
+    // $sessizlikSn  = kac saniye sessizlik olunca kayit OTOMATIK bitsin (Asterisk RECORD FILE
+    //                 "s=" parametresi SANIYE cinsindendir). Eski deger 2000 idi => 2000 sn =>
+    //                 sessizlik algilama fiilen kapaliydi, kayit hep tam sureye kadar surerdi
+    //                 (konusma kesiliyor / gurultu giriyordu). Artik kullanici susunca kayit biter.
+    $agi->record_file($kayitDosyasi, "wav", "", $kayitSuresi, 0, false, $sessizlikSn);
     return $kayitDosyasi.".wav";
 
 }
-function sesiMetneDonustur($sesDosyasi)
+function sesiMetneDonustur($sesDosyasi, $alternatifleriDondur = false)
 {
+    global $agi;
 
     $sesDosyasiYolu = $sesDosyasi;
-    $transcribeKomutu = "node /var/lib/asterisk/agi-bin/transcribe2.js " .escapeshellarg($sesDosyasiYolu);
+    $transcribeKomutu = "node /var/lib/asterisk/agi-bin/transcribe2.js " .escapeshellarg($sesDosyasiYolu). " 2>/dev/null";
     $transcribeCiktisi = shell_exec($transcribeKomutu);
     $transcribeSonucu = json_decode($transcribeCiktisi, true);
-    if($transcribeSonucu['success'])
-        return strtolower($transcribeSonucu['transcription']);
-    else{
+    if($transcribeSonucu && $transcribeSonucu['success']) {
+        $metin = strtolower($transcribeSonucu['transcription']);
+        $guven = isset($transcribeSonucu['confidence']) ? $transcribeSonucu['confidence'] : 0;
 
-        return $transcribeSonucu;
+        if ($agi) {
+            $agi->verbose("STT sonuç: '{$metin}' (güven: " . round($guven * 100) . "%)");
+        }
+
+        // Düşük güven skorunda alternatif transkriptleri de logla
+        if ($guven < 0.7 && isset($transcribeSonucu['alternatives']) && $agi) {
+            foreach ($transcribeSonucu['alternatives'] as $alt) {
+                $agi->verbose("  Alternatif: '{$alt['transcript']}' (" . round(($alt['confidence'] ?? 0) * 100) . "%)");
+            }
+        }
+
+        if ($alternatifleriDondur && isset($transcribeSonucu['alternatives'])) {
+            return [
+                'metin' => $metin,
+                'guven' => $guven,
+                'alternatifler' => array_map(function($a) { return strtolower($a['transcript']); }, $transcribeSonucu['alternatives'])
+            ];
+        }
+
+        return $metin;
+    }
+    else{
+        if ($agi) {
+            $agi->verbose("STT başarısız: " . ($transcribeSonucu['error'] ?? 'Bilinmeyen hata'));
+        }
+        return '';
     }
 }
 function anonsCal($agi,$metin,$anonsTuru,$userId,$eskiSesDosyasi)
@@ -527,16 +718,92 @@ function anonsCal($agi,$metin,$anonsTuru,$userId,$eskiSesDosyasi)
 }
 function evetHayirVaryasyon($evetHayir)
 {
-    $evetVaryasyonlar = ["evet","elbette","tabi","tabii","tabii olur","tabi olur","neden olmasın","tabiki","tabii ki","tabiiki","istiyorum","olur"];
-    $hayirVaryasyonlar = ["hayır","hayir","olmaz","istemiyorum","siktir git","çek git","siktir lan","siktir","defol","defol ulen","defol lan","kapat","kapat la","kapat lan","hayır tabiki","hayır tabiiki","hayır tabi","hayır lan"];
+    $evetHayir = trim(strtolower($evetHayir));
+
+    // Tam eşleşme listesi
+    $evetVaryasyonlar = ["evet","elbette","tabi","tabii","tabii olur","tabi olur","neden olmasın","tabiki","tabii ki","tabiiki","istiyorum","olur","peki","tamam","kabul","onaylıyorum","memnuniyetle","hay hay","he","hee","aynen","isterim"];
+    $hayirVaryasyonlar = ["hayır","hayir","olmaz","istemiyorum","kapat","kapat la","kapat lan","hayır tabiki","hayır tabiiki","hayır tabi","hayır lan","yok","istemem","onaylamıyorum","iptal","vazgeçtim","gerek yok","red"];
+
+    // 1. Tam eşleşme
     if(in_array($evetHayir,$evetVaryasyonlar))
         return 'evet';
-    elseif(in_array($evetHayir,$hayirVaryasyonlar))
-        return  'hayır';
-    else
-        return '';
-    
- 
+    if(in_array($evetHayir,$hayirVaryasyonlar))
+        return 'hayır';
+
+    // 2. İçerik kontrolü (STT bazen fazladan kelime ekleyebilir)
+    foreach ($evetVaryasyonlar as $varyasyon) {
+        if (mb_stripos($evetHayir, $varyasyon) !== false) {
+            return 'evet';
+        }
+    }
+    foreach ($hayirVaryasyonlar as $varyasyon) {
+        if (mb_stripos($evetHayir, $varyasyon) !== false) {
+            return 'hayır';
+        }
+    }
+
+    // 3. Fuzzy eşleşme - STT yakın ama hatalı kelime döndürdüğünde
+    $enYakinEvet = 0;
+    $enYakinHayir = 0;
+    foreach ($evetVaryasyonlar as $varyasyon) {
+        similar_text($evetHayir, $varyasyon, $yuzde);
+        if ($yuzde > $enYakinEvet) $enYakinEvet = $yuzde;
+    }
+    foreach ($hayirVaryasyonlar as $varyasyon) {
+        similar_text($evetHayir, $varyasyon, $yuzde);
+        if ($yuzde > $enYakinHayir) $enYakinHayir = $yuzde;
+    }
+
+    // %70'den yüksek benzerlik varsa kabul et
+    if ($enYakinEvet >= 70 && $enYakinEvet > $enYakinHayir)
+        return 'evet';
+    if ($enYakinHayir >= 70 && $enYakinHayir > $enYakinEvet)
+        return 'hayır';
+
+    return '';
+}
+
+/**
+ * Fuzzy hizmet eşleştirme: STT çıktısı ile hizmet adı arasında benzerlik skoru hesaplar.
+ * Hem similar_text hem de kelime bazlı eşleşmeyi birleştirir.
+ */
+function fuzzyHizmetEslestir($soylenen, $hizmetAdi)
+{
+    $soylenen = turkceNormalize($soylenen);
+    $hizmetAdi = turkceNormalize($hizmetAdi);
+
+    // 1. similar_text ile genel benzerlik
+    similar_text($soylenen, $hizmetAdi, $yuzde1);
+
+    // 2. Kelime bazlı eşleşme (STT "saç kesim" der, hizmet "saç kesimi" olabilir)
+    $soylenenKelimeler = explode(' ', $soylenen);
+    $hizmetKelimeler = explode(' ', $hizmetAdi);
+    $eslesenKelime = 0;
+    $toplamKelime = count($soylenenKelimeler);
+
+    foreach ($soylenenKelimeler as $sk) {
+        if (mb_strlen($sk) < 2) continue;
+        foreach ($hizmetKelimeler as $hk) {
+            // Kök eşleşmesi: kelimenin ilk %70'i aynıysa eşleşmiş say
+            $minUzunluk = min(mb_strlen($sk), mb_strlen($hk));
+            $kokUzunluk = max(2, (int)($minUzunluk * 0.7));
+            if (mb_substr($sk, 0, $kokUzunluk) === mb_substr($hk, 0, $kokUzunluk)) {
+                $eslesenKelime++;
+                break;
+            }
+        }
+    }
+    $yuzde2 = $toplamKelime > 0 ? ($eslesenKelime / $toplamKelime) * 100 : 0;
+
+    // 3. Levenshtein mesafesi (kısa kelimeler için etkili)
+    $levMesafe = levenshtein($soylenen, $hizmetAdi);
+    $maxUzunluk = max(mb_strlen($soylenen), mb_strlen($hizmetAdi));
+    $yuzde3 = $maxUzunluk > 0 ? (1 - $levMesafe / $maxUzunluk) * 100 : 0;
+
+    // Ağırlıklı ortalama: kelime bazlı > similar_text > levenshtein
+    $sonSkor = ($yuzde2 * 0.45) + ($yuzde1 * 0.35) + ($yuzde3 * 0.20);
+
+    return round($sonSkor);
 }
 
 /*function hizmetbulAsync($transcribe, $salonid, $agi, $personeltranscribe, $personelEkle, $tarihSaat)
@@ -797,25 +1064,147 @@ function parseDateWithChrono($text,$agi) {
         return null;
     }
     
+    // TZ=Europe/Istanbul: node cocuk sureci sistem TZ'sini kullaniyordu; sunucu UTC ise
+    // gece 00:00-03:00 arasi "yarin/bugun" bir gun erkene kayiyordu. Turkiye saatini zorla.
     $command = sprintf(
-        'echo %s | node /var/lib/asterisk/agi-bin/tarihParser.js 2>&1',
+        'echo %s | TZ=Europe/Istanbul node /var/lib/asterisk/agi-bin/tarihParser.js 2>&1',
         escapeshellarg($text)
     );
     
     $output = shell_exec($command);
     $agi->verbose("📤 Komut: " . $command);
     $agi->verbose("📥 Ham çıktı: " . trim($output));
-    
+    if (function_exists('debugLog')) {
+        debugLog('PARSER_INPUT_TEXT', $text);
+        debugLog('PARSER_RAW_OUTPUT', trim($output));
+    }
+
     $lines = explode("\n", trim($output));
     $lastLine = end($lines);
     $agi->verbose("📌 Son satır: " . $lastLine);
-    
+
     if ($lastLine !== 'NULL' && strtotime($lastLine)) {
         $agi->verbose("✅ Geçerli tarih: " . $lastLine);
+        if (function_exists('debugLog')) debugLog('PARSER_GECERLI_TARIH', $lastLine);
         return $lastLine;
     }
-    
+
     $agi->verbose("❌ Geçersiz tarih veya NULL");
+    if (function_exists('debugLog')) debugLog('PARSER_GECERSIZ', $lastLine);
     return null;
+}
+
+/**
+ * Bir tarih/saat'i doğal Türkçe ile ifade eder:
+ *   bugün → "bugün saat 15:30"
+ *   yarın → "yarın saat 15:30"
+ *   diğer → "29 Nisan Çarşamba günü saat 15:30"
+ */
+function tarihSaatiDogalIfade($ts, $turkceGun) {
+    $bugunTs = strtotime(date('Y-m-d'));
+    $hedefTs = strtotime(date('Y-m-d', $ts));
+    $farkGun = (int) round(($hedefTs - $bugunTs) / 86400);
+    $saat = date('H:i', $ts);
+
+    if ($farkGun === 0) {
+        return "bugün saat {$saat}";
+    }
+    if ($farkGun === 1) {
+        return "yarın saat {$saat}";
+    }
+
+    $aylar = [
+        1 => 'Ocak', 2 => 'Şubat', 3 => 'Mart', 4 => 'Nisan',
+        5 => 'Mayıs', 6 => 'Haziran', 7 => 'Temmuz', 8 => 'Ağustos',
+        9 => 'Eylül', 10 => 'Ekim', 11 => 'Kasım', 12 => 'Aralık',
+    ];
+    $gun = (int) date('d', $ts);
+    $ayAdi = $aylar[(int) date('n', $ts)];
+    return "{$gun} {$ayAdi} {$turkceGun} günü saat {$saat}";
+}
+
+function turkceNormalize($metin)
+{
+    if (!is_string($metin)) return '';
+    $metin = mb_strtolower(trim($metin), 'UTF-8');
+    $map = [
+        'ç' => 'c', 'ğ' => 'g', 'ı' => 'i',
+        'ö' => 'o', 'ş' => 's', 'ü' => 'u',
+        'â' => 'a', 'î' => 'i', 'û' => 'u',
+    ];
+    $metin = strtr($metin, $map);
+    $metin = preg_replace('/\s+/u', ' ', $metin);
+    return trim($metin);
+}
+
+function fonetikNormalize($metin)
+{
+    $metin = trim(strtolower($metin));
+
+    $aliases = [
+        // HIFU
+        'hayfu' => 'hifu', 'ay fu' => 'hifu', 'hi fu' => 'hifu',
+        'ifu' => 'hifu', 'hif u' => 'hifu', 'hayfuu' => 'hifu',
+        // LIFU
+        'li fu' => 'lifu', 'layfu' => 'lifu', 'lif u' => 'lifu',
+        'life' => 'lifu', 'lay fu' => 'lifu',
+        // LIPOSONIX
+        'lipo sonik' => 'liposonix', 'liposonik' => 'liposonix',
+        'lipokomik' => 'liposonix',
+        'lipo komik'=>'liposonix',
+        'lipo soniks' => 'liposonix', 'lipo sonix' => 'liposonix',
+        'liposoniks' => 'liposonix',
+        // LIPOSUCTION
+        'liposakşın' => 'liposuction', 'lipo sakşın' => 'liposuction',
+        'liposükşın' => 'liposuction', 'lipo suction' => 'liposuction',
+        'liposüction' => 'liposuction', 'lipo sakşin' => 'liposuction',
+        // HYDRAFACIAL
+        'hidrafacial' => 'hydrafacial', 'hidra facial' => 'hydrafacial',
+        'hidra feyşıl' => 'hydrafacial', 'hayra fesıl' => 'hydrafacial',
+        'hidrafeyşıl' => 'hydrafacial', 'hidra feşıl' => 'hydrafacial',
+        // ARC SISTEM
+        'ark sistem' => 'arc sistem', 'ar si sistem' => 'arc sistem',
+        'arx sistem' => 'arc sistem', 'ars sistem' => 'arc sistem',
+        // EDY SCULPT 360
+        'edi skalpt' => 'edy sculpt', 'e d y sculpt' => 'edy sculpt',
+        'edi sculpt' => 'edy sculpt', 'edi skalp' => 'edy sculpt',
+        'ediy skalpt' => 'edy sculpt', 'edy skalpt' => 'edy sculpt',
+        // G5
+        'ci beş' => 'g5', 'ji beş' => 'g5', 'ji 5' => 'g5',
+        'ci 5' => 'g5', 'g 5' => 'g5', 'ji five' => 'g5',
+        // KARBON PEELING
+        'karbon piling' => 'karbon peeling', 'karbon pilinğ' => 'karbon peeling',
+        'karbon pilin' => 'karbon peeling',
+        // POPOLIFT
+        'popo lift' => 'popolift', 'popolif' => 'popolift',
+        'popo lif' => 'popolift', 'popol ift' => 'popolift',
+        // KIRPIK LIFTING
+        'kirpik liftiğ' => 'kirpik lifting', 'kirpik liftin' => 'kirpik lifting',
+        // DERMAPEN
+        'derma pen' => 'dermapen',
+        // PEELING genel
+        'piling' => 'peeling', 'pilinğ' => 'peeling',
+        // SCULPT genel
+        'skalpt' => 'sculpt', 'skalp' => 'sculpt',
+        // KOLAJEN IP
+        'kolojen ip' => 'kolajen ip', 'kolajen i p' => 'kolajen ip',
+    ];
+    
+    // 1. Tam eşleşme
+    if (isset($aliases[$metin])) {
+        return $aliases[$metin];
+    }
+    
+    // 2. Kısmi eşleşme (uzun ifadeler için - uzundan kısaya sırala)
+    $aliasKeys = array_keys($aliases);
+    usort($aliasKeys, function($a, $b) { return mb_strlen($b) - mb_strlen($a); });
+    
+    foreach ($aliasKeys as $yanlis) {
+        if (mb_stripos($metin, $yanlis) !== false) {
+            $metin = str_ireplace($yanlis, $aliases[$yanlis], $metin);
+        }
+    }
+    
+    return $metin;
 }
 
