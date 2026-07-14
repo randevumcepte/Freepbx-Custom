@@ -10,11 +10,13 @@
     "dialog": "node test/dialog-cli.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.70.0",
     "@google-cloud/speech": "^6.7.0",
     "ari-client": "^2.2.0",
     "axios": "^1.7.0",
     "dotenv": "^16.4.0"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/sdk": "^0.70.0"
   },
   "engines": {
     "node": ">=18"

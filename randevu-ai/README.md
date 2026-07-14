@@ -2,7 +2,15 @@
 
 Eski AGI monoliti `sesliYanitOptimize.php`'nin (kaydet→shell_exec node→STT→regex `tarihParser.js`→sonraki tur) yerini almak için tasarlanan **akış-tabanlı, LLM beyinli** sesli asistan.
 
-**Temel fark:** Tarih ve hizmet anlama işini **Claude** yapar (tool-calling ile). `tarihParser.js` ve fuzzy string eşleştirme **tamamen kalkar.** Model, mevcut Laravel booking API'lerini fonksiyon olarak çağırır.
+**Temel fark:** Tarih ve hizmet anlama işini **LLM** yapar (tool-calling ile). `tarihParser.js` ve fuzzy string eşleştirme **tamamen kalkar.** Model, mevcut Laravel booking API'lerini fonksiyon olarak çağırır.
+
+**Kapsam:** randevu **oluştur / güncelle / iptal** + **paketten** randevu. Slotlar: hizmet, personel, tarih, saat.
+
+**Beyin çift-modlu (`.env` → `BRAIN`):**
+- `ollama` (varsayılan) — **ÜCRETSİZ**, kendi sunucunuzda Qwen; çağrı-başı sıfır ücret.
+- `claude` — Anthropic API (ücretli, en kaliteli/akıcı).
+
+Aynı prompt + aynı tool'lar; sadece motor değişir (`src/engines/`).
 
 ---
 
@@ -54,11 +62,14 @@ Asterisk (Stasis: randevu_ai)
 | `src/ari.js` | Tek çağrının tüm yaşam döngüsü: medya köprüsü, tur döngüsü, transfer/hangup |
 | `src/rtp.js` | External media'dan gelen RTP → PCM |
 | `src/stt.js` | Google streaming STT sarmalayıcı |
-| `src/dialog.js` | **Beyin:** Claude tool-calling döngüsü (manuel loop) |
-| `src/tools.js` | Tool tanımları + **gerçek** API çağrıları (uygunluk/oluştur) |
-| `src/prompts.js` | Türkçe sistem promptu (bağlam gömülü) |
+| `src/dialog.js` | **Beyin dispatcher:** `BRAIN`'e göre motoru seçer |
+| `src/engines/ollama.js` | **ÜCRETSİZ** motor: yerel Qwen (Ollama, OpenAI-uyumlu tool-calling) |
+| `src/engines/claude.js` | API motoru: Claude (streaming) |
+| `src/chunker.js` | Cümle-cümle akıtma (TTS kuyruğu için) |
+| `src/tools.js` | Tool tanımları + **gerçek** API çağrıları (oluştur/güncelle/iptal/paket) |
+| `src/prompts.js` | Türkçe sistem promptu (bağlam + mevcut randevular + paket gömülü) |
 | `src/tts.js` | Metin → ses dosyası (ARI Playback için) |
-| `src/callContext.js` | Çağrı başı bağlam (`santralkarsilamametni` API) |
+| `src/callContext.js` | Çağrı başı bağlam (`santralkarsilamametni`: hizmet/randevu/paket) |
 | `test/dialog-cli.js` | **Telefon olmadan** beyni test et (stub API) |
 | `extensions_snippet.conf` | Dialplan entegrasyonu + IVR fallback |
 
@@ -66,16 +77,25 @@ Asterisk (Stasis: randevu_ai)
 
 ## Hızlı test (telefon donanımı GEREKMEZ)
 
-Beynin NLU + tarih + hizmet + tool akışını klavyeden dene. Gerçek API çağrılmaz, **gerçek randevu oluşmaz** (stub):
+Beynin NLU + tarih + hizmet + tool akışını klavyeden dene. Gerçek API çağrılmaz, **gerçek randevu oluşmaz** (stub).
 
+**Ücretsiz / yerel (Ollama) ile:**
 ```bash
-cd randevu-ai
-npm install
-export ANTHROPIC_API_KEY=sk-ant-...       # veya: ant auth login
+# 1) Ollama kur (ollama.com) ve modeli indir:
+ollama pull qwen2.5:7b        # CPU-only ise: qwen2.5:3b
+# 2) test:
+cd randevu-ai && npm install
+npm run dialog                # BRAIN varsayılan ollama
+```
+
+**API (Claude) ile denemek isterseniz:**
+```bash
+cd randevu-ai && npm install
+export BRAIN=claude ANTHROPIC_API_KEY=sk-ant-...
 npm run dialog
 ```
 
-Örnek: "yarın öğleden sonra saç kesimi", "önümüzdeki salıya boya", "Elif'ten olsun" — asistanın tarihi çözüşünü, onay isteyişini ve `randevu_olustur`'a gidişini izle.
+Örnek cümleler: "yarın öğleden sonra saç kesimi, Elif'ten olsun", "salı 14:00 randevumu perşembe 16:00'ya al" (güncelle), "cumaki randevumu iptal et", "paketimden randevu istiyorum".
 
 ---
 
@@ -118,16 +138,22 @@ asterisk -rx "dialplan reload"
 - **Çok eşzamanlı çağrı:** external media portu çağrı başına ayrılmalı (`rtp.js` port havuzu).
 - **STT speechContext:** salonun gerçek hizmet adlarını boost olarak ilet (`stt.js`).
 - **`santralkarsilamametni` alan eşlemesi:** canlı yanıtla birebir doğrula (`callContext.js`).
-- **Paket akışı:** çok-hizmetli paket randevusu (`tools.js` — array_fill + `paketBilgi`).
-- **TTS:** Google TTS motoru (`tts.js` — şu an Polly).
-- **Latency:** varsayilan model `claude-sonnet-5` (denge). Yanit stream + cumle-cumle TTS + barge-in UYGULANDI. Daha hizli istenirse `.env` CLAUDE_MODEL=claude-haiku-4-5; en zeki icin claude-opus-4-8.
+- **Paket alan adları:** `paket` / `enYakinRandevu` şeklini canlı `santralkarsilamametni` yanıtıyla doğrula (`callContext.js`, `tools.js`).
+- **TTS:** Google/Piper motoru (`tts.js` — şu an Polly); tam ücretsiz için **Piper** (Türkçe, CPU).
+- **Ollama streaming:** şu an non-streaming (cümlelere bölünüp çalınıyor); istenirse Ollama stream + delta ile ilk ses daha da öne çekilir.
+- **Latency:** yanıt akıtma + cümle-cümle TTS + barge-in UYGULANDI.
 
 ---
 
-## Yaklaşık maliyet (kaba)
+## Tamamen ücretsiz yığın (self-host, çağrı-başı 0 ücret)
 
-- **STT:** Google ~0,016–0,024 $/dk.
-- **LLM:** Claude Sonnet 5 (varsayılan) tur başına birkaç bin token; kısa randevu görüşmesi (~6–10 tur) ≈ 0,03–0,12 $ mertebesi. Daha ucuz/hızlı: `haiku-4-5`. En zeki: `opus-4-8`.
-- **TTS:** Polly ~0,004 $/1k karakter.
+| Katman | Ücretsiz araç | Not |
+|---|---|---|
+| STT | **Whisper** (faster-whisper) | `whisperTranscribe.py` zaten var |
+| Beyin | **Ollama + Qwen** (`BRAIN=ollama`) | GPU: 7B/14B hızlı; CPU-only: 3B (gecikme artar) |
+| TTS | **Piper** (Türkçe) | CPU'da çalışır |
 
-Bir randevu görüşmesi tipik olarak birkaç dakika ve ~0,10–0,40 $ toplam mertebesindedir; salon çağrı hacmi için yönetilebilir.
+Tek gerçek maliyet **donanım** (para değil): akıcılık için modest bir GPU idealdir; CPU-only'da 3B ile idare edilir. AI'yı santral kutusunda çalıştırmak zorunda değilsiniz — ağdaki herhangi bir makinede olabilir.
+
+## Maliyet — API modu (`BRAIN=claude`, opsiyonel)
+- LLM Sonnet 5: görüşme başı ≈ 0,03–0,12 $; STT/TTS eklenince ~0,10–0,30 $. Ollama'ya geçince bu sıfırlanır (yalnız donanım).

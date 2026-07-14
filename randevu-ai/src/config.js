@@ -20,9 +20,17 @@ module.exports = {
     port: parseInt(process.env.EXTERNAL_MEDIA_PORT || '5001', 10),
     format: 'slin16', // 16-bit signed linear PCM, 16 kHz
   },
+  // Beyin motoru: 'ollama' = UCRETSIZ, kendi sunucunuzda (Qwen) — cagri basi sifir ucret.
+  //               'claude' = Anthropic API (ucretli ama en kaliteli/akici).
+  brain: process.env.BRAIN || 'ollama',
+  ollama: {
+    url: process.env.OLLAMA_URL || 'http://127.0.0.1:11434',
+    // Turkce + tool-calling icin acik modeller arasinda en iyi denge: Qwen.
+    // GPU varsa: qwen2.5:14b | orta: qwen2.5:7b | CPU-only/dusuk: qwen2.5:3b
+    model: process.env.OLLAMA_MODEL || 'qwen2.5:7b',
+  },
   claude: {
-    // Denge: Opus'a yakin Turkce kalite + belirgin dusuk gecikme (akicilik).
-    // Daha hizli: claude-haiku-4-5 | En zeki: claude-opus-4-8
+    // API kullanilirsa. Denge: claude-sonnet-5 | hizli: haiku-4-5 | en zeki: opus-4-8
     model: process.env.CLAUDE_MODEL || 'claude-sonnet-5',
   },
   stt: {

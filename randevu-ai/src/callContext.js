@@ -22,13 +22,29 @@ async function loadCallContext(callerId, did) {
     personeller: (h.personeller || []).map(p => ({ id: p.id ?? p.personel_id, ad: p.personel_adi ?? p.ad })),
   }));
 
+  // Mevcut randevular (guncelleme/iptal icin) — karsilama enYakinRandevu doner.
+  const enYakinRandevu = (data.enYakinRandevu || []).map(r => ({
+    randevuId: r.randevuid ?? r.randevu_id ?? r.id,
+    tarih: r.tarih, saat: r.saat,
+    hizmetler: r.hizmetler, paketAdi: r.paketAdi ?? r.paket_adi, seansNo: r.seansNo ?? r.seans_no,
+  }));
+
+  // Paket (bekleyen seans) — varsa paketten randevu teklif edilir.
+  const paket = data.paket ? {
+    paketAdi: data.paket.paketAdi ?? data.paket.paket_adi,
+    bekleyenSeans: data.paket.bekleyenSeans ?? data.paket.bekleyen_seans,
+    salonHizmetId: data.paket.salonHizmetId ?? data.paket.salon_hizmet_id,
+    personeller: data.paket.personeller || [],
+    hizmetler: data.paket.hizmetler || [],
+  } : null;
+
   return {
     salonAdi: data.salonAdi ?? data.salon_adi ?? 'Salonumuz',
     salonId: data.salon_id ?? data.salonId,
     userId: data.user_id ?? data.userId ?? null,
     musteriAdi: data.musteriAdi ?? data.musteri_adi ?? null,
     operatorKanali: data.operator_kanali ?? data.operatorKanali ?? null,
-    hizmetler,
+    hizmetler, enYakinRandevu, paket,
   };
 }
 
