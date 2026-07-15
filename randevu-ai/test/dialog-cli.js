@@ -19,9 +19,10 @@ const callContext = {
     { salonHizmetId: 13, ad: 'Manikur', sureDk: 45, fiyat: 250, personeller: [{ id: 103, ad: 'Zeynep' }] },
     { salonHizmetId: 14, ad: 'Protez Tirnak', sureDk: 120, fiyat: 700, personeller: [{ id: 103, ad: 'Zeynep' }] },
   ],
-  // Guncelleme/iptal denemek icin ornek mevcut randevu:
+  // Guncelleme/iptal + coklu-secim denemek icin ornek mevcut randevular:
   enYakinRandevu: [
     { randevuId: 5001, tarih: '2026-07-16', saat: '14:00:00', hizmetler: 'Sac Kesimi' },
+    { randevuId: 5002, tarih: '2026-07-18', saat: '11:00:00', hizmetler: 'Manikur', paketAdi: 'Cilt Bakim', seansNo: 2 },
   ],
   // Paketten randevu denemek icin ornek paket (test: "paketimden randevu istiyorum"):
   paket: { paketAdi: 'Cilt Bakim Paketi', bekleyenSeans: 3, salonHizmetId: 21, personeller: [{ id: 103, ad: 'Zeynep' }], hizmetler: [{ hizmet_id: 21 }] },

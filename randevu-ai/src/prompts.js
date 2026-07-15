@@ -11,9 +11,10 @@ function buildSystemPrompt(ctx) {
     return `- salonHizmetId=${h.salonHizmetId} | "${h.ad}" | ${h.sureDk} dk | ${h.fiyat} TL | personel: ${pers}`;
   }).join('\n') || '(hizmet listesi bos)';
 
-  const randevuSatir = (ctx.enYakinRandevu || []).map(r =>
-    `- randevuId=${r.randevuId} | ${r.tarih} ${r.saat} | ${r.hizmetler || r.paketAdi || ''}`
-  ).join('\n') || '(mevcut randevu yok)';
+  const randevuSatir = (ctx.enYakinRandevu || []).map((r, i) => {
+    const paket = r.paketAdi ? ` (${r.paketAdi} paketi ${r.seansNo || ''}. seans)` : '';
+    return `- ${i + 1}. randevu: randevuId=${r.randevuId} | ${r.tarih} ${r.saat} | ${r.hizmetler || ''}${paket}`;
+  }).join('\n') || '(mevcut randevu yok)';
 
   const paketSatir = ctx.paket
     ? `VAR: "${ctx.paket.paketAdi}" — ${ctx.paket.bekleyenSeans} seans bekliyor. Musteri isterse bu paketten randevu olusturulur (hizmet/personel paketten gelir, sadece tarih-saat sorulur; tool'lara paketten=true gecir).`
@@ -44,10 +45,12 @@ AKIS KURALLARI:
   -> uygun_randevu_bul -> (alternatif ise onerilen saati SOYLE) -> ONAY al -> randevu_olustur.
 • PAKETTEN OLUSTUR: paket varsa ve musteri kabul ederse hizmet/personel SORMA; sadece tarih+saat al.
   -> uygun_randevu_bul(paketten=true) -> ONAY -> randevu_olustur(paketten=true).
-• GUNCELLE: mevcut randevulardan hangisini istedigini belirle (birden fazlaysa sor), yeni tarih-saat al,
-  ONAY al -> randevu_guncelle.
-• IPTAL: hangi randevu oldugunu belirle, ONAY al ("... randevunuzu iptal ediyorum, onayliyor musunuz?")
-  -> randevu_iptal.
+• GUNCELLE (erteleme): Birden fazla randevu varsa hangisini belirle (musteri "birinci/ikinci/sonuncu"
+  ya da tarihi soyleyebilir). Yeni tarih-saati al -> uygun_randevu_bul(randevuId=..., tarihSaat=...)
+  -> sonuc ALTERNATIF ise onerilen saati SOYLE -> ONAY al -> randevu_guncelle(randevuId=...).
+  (Guncellemede hizmet/personel SORMA; ayni randevu erteleniyor.)
+• IPTAL: Birden fazla varsa hangisini belirle. ONAY al ("... randevunuzu iptal ediyorum, onayliyor
+  musunuz?") -> randevu_iptal(randevuId=...). Onaylamazsa iptal etme.
 • Basari sonrasi kisaca teyit et ve arama_kapat cagir.
 
 GENEL:

@@ -8,14 +8,15 @@ const config = require('./config');
 const SPECS = [
   {
     name: 'uygun_randevu_bul',
-    description: 'Verilen hizmet + tarih-saat (opsiyonel personel) icin uygun slotu backend\'den sorar. randevu_olustur\'dan ONCE cagrilir. Paketten randevu ise paketten=true.',
+    description: 'Verilen tarih-saat icin uygun slotu backend\'den sorar. YENI randevuda randevu_olustur\'dan, GUNCELLEMEde randevu_guncelle\'den ONCE cagrilir. Guncelleme ise randevuId ver (hizmet/personel gerekmez).',
     schema: {
       type: 'object',
       properties: {
-        salonHizmetId: { type: 'integer', description: 'Sistem promptundaki hizmet listesinden secilen id (paketten ise bos birak)' },
+        salonHizmetId: { type: 'integer', description: 'YENI randevu: hizmet listesinden secilen id (paketten/guncelleme ise bos birak)' },
         tarihSaat: { type: 'string', description: 'Istenen tarih-saat, "YYYY-MM-DD HH:mm" (Turkiye saati)' },
         personelId: { type: 'integer', description: 'Musteri personel belirttiyse id; farketmez ise verme' },
-        paketten: { type: 'boolean', description: 'Musterinin paketinden randevu ise true' },
+        paketten: { type: 'boolean', description: 'Musterinin paketinden yeni randevu ise true' },
+        randevuId: { type: 'integer', description: 'GUNCELLEME (erteleme) ise mevcut randevunun id\'si; yeni olusturmada verme' },
       },
       required: ['tarihSaat'],
     },
@@ -35,14 +36,13 @@ const SPECS = [
   },
   {
     name: 'randevu_guncelle',
-    description: 'Mevcut bir randevuyu yeni tarih-saate gunceller. randevuId sistem promptundaki mevcut randevular listesinden secilir.',
+    description: 'Randevuyu, uygun_randevu_bul(randevuId=...) ile dogrulanip ONAYLANAN yeni slota gunceller. Once uygun_randevu_bul(randevuId=...) cagirilmis ve onay alinmis olmalidir.',
     schema: {
       type: 'object',
       properties: {
-        randevuId: { type: 'integer', description: 'Guncellenecek randevunun id\'si' },
-        yeniTarihSaat: { type: 'string', description: 'Yeni tarih-saat, "YYYY-MM-DD HH:mm"' },
+        randevuId: { type: 'integer', description: 'Guncellenecek randevunun id\'si (uygun_randevu_bul\'daki ile ayni)' },
       },
-      required: ['randevuId', 'yeniTarihSaat'],
+      required: ['randevuId'],
     },
   },
   {
@@ -74,6 +74,27 @@ function splitTarihSaat(ts) {
 
 // ── uygun_randevu_bul ────────────────────────────────────────────────────────
 async function uygunRandevuBul(input, ctx) {
+  // GUNCELLEME (reschedule): randevuId ile; backend hizmeti randevudan turetir ve mevcut
+  // randevuyu cakismadan haric tutar. hizmet/personel gerekmez (menu akisiyla birebir).
+  const reschedule = input.randevuId != null && input.randevuId !== '';
+  if (reschedule) {
+    if (ctx.stub) {
+      ctx.lastAvailability.set('slot', { tarihSaat: input.tarihSaat, alternatif: false, randevuId: input.randevuId });
+      return { toModel: JSON.stringify({ uygunTarihSaat: input.tarihSaat, alternatifOneri: false, not: '(STUB) uygun. Onay iste, sonra randevu_guncelle.' }) };
+    }
+    const { data } = await axios.post(`${config.api.base}/api/v1/randevuUygunlukKontrolEt`, {
+      salonHizmetId: null, salonId: ctx.salonId, tarihSaat: input.tarihSaat,
+      personelId: null, paketBilgi: null, randevuId: input.randevuId,
+    }, { headers: { 'Content-Type': 'application/json' }, timeout: 15000 });
+    if (!data || !data.success) return { toModel: 'Bu tarih icin uygun degil. Musteriden baska bir tarih iste.', isError: true };
+    const slot = { tarihSaat: data.tarihsaat || input.tarihSaat, alternatif: !!data.alternatifOneri, randevuId: input.randevuId };
+    ctx.lastAvailability.set('slot', slot);
+    return { toModel: JSON.stringify({
+      uygunTarihSaat: slot.tarihSaat, alternatifOneri: slot.alternatif,
+      not: slot.alternatif ? 'Istenen saat dolu; en yakin uygun bu. Musteriye SOYLE ve onay iste, sonra randevu_guncelle.' : 'Uygun. Onay iste, sonra randevu_guncelle.',
+    }) };
+  }
+
   const paketten = !!input.paketten && ctx.paket;
   let salonHizmetId = input.salonHizmetId;
   let hizmet = null;
@@ -151,13 +172,18 @@ async function randevuOlustur(input, ctx) {
 
 // ── randevu_guncelle ─────────────────────────────────────────────────────────
 async function randevuGuncelle(input, ctx) {
-  const { tarih, saat } = splitTarihSaat(input.yeniTarihSaat);
+  // Menu akisiyla ayni: yalnizca uygun_randevu_bul(randevuId) ile DOGRULANMIS slota gunceller.
+  const slot = ctx.lastAvailability.get('slot');
+  if (!slot || !slot.tarihSaat) {
+    return { toModel: 'Once uygun_randevu_bul(randevuId=...) ile yeni tarihi dogrula ve onay al.', isError: true };
+  }
+  const { tarih, saat } = splitTarihSaat(slot.tarihSaat);
   if (ctx.stub) return { toModel: `(STUB) Randevu #${input.randevuId} guncellendi -> ${tarih} ${saat}. Teyit et ve arama_kapat cagir.` };
   const { data } = await axios.post(`${config.api.base}/api/v1/randevuyuenyakintariheguncelle`, {
     randevuid: input.randevuId, randevutarihi: tarih, randevusaati: saat,
   }, { headers: { 'Content-Type': 'application/json' }, timeout: 15000 });
   if (!data) return { toModel: 'Guncelleme basarisiz. Operatore aktar.', isError: true };
-  return { toModel: 'Randevu guncellendi. Yeni tarihi teyit et ve arama_kapat cagir.' };
+  return { toModel: `Randevu ${tarih} ${saat} olarak guncellendi. Musteriye teyit et ve arama_kapat cagir.` };
 }
 
 // ── randevu_iptal ────────────────────────────────────────────────────────────
