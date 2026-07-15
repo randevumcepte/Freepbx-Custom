@@ -61,14 +61,15 @@ Asterisk (Stasis: randevu_ai)
 | `src/server.js` | Giriş: ARI'ye bağlan, `StasisStart` → `CallSession` |
 | `src/ari.js` | Tek çağrının tüm yaşam döngüsü: medya köprüsü, tur döngüsü, transfer/hangup |
 | `src/rtp.js` | External media'dan gelen RTP → PCM |
-| `src/stt.js` | Google streaming STT sarmalayıcı |
+| `src/stt.js` | **ÜCRETSİZ STT:** enerji-VAD + Whisper (`whisper_server.py`'ye gönderir) |
+| `whisper_server.py` | faster-whisper kalıcı sunucu (modeli bir kez yükler, düşük gecikme) |
 | `src/dialog.js` | **Beyin dispatcher:** `BRAIN`'e göre motoru seçer |
 | `src/engines/ollama.js` | **ÜCRETSİZ** motor: yerel Qwen (Ollama, OpenAI-uyumlu tool-calling) |
 | `src/engines/claude.js` | API motoru: Claude (streaming) |
 | `src/chunker.js` | Cümle-cümle akıtma (TTS kuyruğu için) |
 | `src/tools.js` | Tool tanımları + **gerçek** API çağrıları (oluştur/güncelle/iptal/paket) |
 | `src/prompts.js` | Türkçe sistem promptu (bağlam + mevcut randevular + paket gömülü) |
-| `src/tts.js` | Metin → ses dosyası (ARI Playback için) |
+| `src/tts.js` | **ÜCRETSİZ TTS:** Edge-TTS (Türkçe) → wav; piper/polly de destekli |
 | `src/callContext.js` | Çağrı başı bağlam (`santralkarsilamametni`: hizmet/randevu/paket) |
 | `test/dialog-cli.js` | **Telefon olmadan** beyni test et (stub API) |
 | `extensions_snippet.conf` | Dialplan entegrasyonu + IVR fallback |
@@ -99,20 +100,27 @@ npm run dialog
 
 ---
 
-## Prod kurulum
+## Prod kurulum (sidecar sunucu — tamamen ÜCRETSİZ varsayılan)
+
+Varsayılan yığın: **Whisper (STT) + Ollama/Qwen (beyin) + Edge-TTS (TTS)** → çağrı-başı 0 ücret.
 
 ```bash
-cd /var/lib/asterisk/agi-bin/randevu-ai
-npm install
-cp .env.example .env && nano .env          # ARI, ANTHROPIC_API_KEY, GOOGLE creds, API_BASE
-```
+# 0) Gereksinimler (sidecar/Laravel sunucusunda)
+pip install faster-whisper edge-tts        # ücretsiz STT + TTS
+# ffmpeg (edge mp3->wav) ve node kurulu olmalı; ollama: https://ollama.com
+ollama pull qwen2.5:7b                      # CPU-only: qwen2.5:3b
 
-Asterisk `ari.conf` içinde app kullanıcısı tanımlı ve HTTP açık olmalı (`http.conf`).
+cd randevu-ai && npm install
+cp .env.example .env && nano .env           # ARI_URL=Asterisk IP, EXTERNAL_MEDIA_HOST=bu sunucu IP, ARI_PASS
 
-```bash
+# 1) Ücretsiz STT sunucusunu başlat (modeli bir kez yükler)
+pm2 start whisper_server.py --name whisper --interpreter python3 -- small
+
+# 2) Ollama zaten servis; sidecar'ı başlat
 pm2 start src/server.js --name randevu-ai
-asterisk -rx "dialplan reload"
 ```
+
+FreePBX 16 tarafında: ARI kullanıcısı (`ari_additional_custom.conf`), HTTP `bindaddr=0.0.0.0`, firewall'da sidecar IP'si Trusted, `[sesli-asistan]` dialplan bloğu (`extensions_custom.conf`), sonra `asterisk -rx "dialplan reload"`. App adı `ari show apps` ile `ARI_APP` = dialplan `Stasis(...)` eşleşmeli.
 
 ---
 
@@ -127,8 +135,8 @@ asterisk -rx "dialplan reload"
 
 ## ⚠️ Neyi çözer, neyi ÇÖZMEZ
 
-- **Çözer:** yanlış tarih (regex kalktı), söyleneni algılamama (streaming STT + LLM), sonsuz döngü, doğal konuşma.
-- **ÇÖZMEZ (backend fix hâlâ şart):** oda/personel ataması eksikliği. Bu asistan da **aynı** `santralRandevuEkle` API'sini çağırır; `oda_id=NULL` bug'ı (tek elemanlı dizi + `OdaHizmetler` fallback yok — Batch 4 #12/#13) backend'de duruyor. `tools.js` client tarafında dizileri doğru kurar ama backend'in de düzeltilmesi gerekir.
+- **Çözer:** yanlış tarih (regex kalktı), söyleneni algılamama (VAD + Whisper + LLM), sonsuz döngü, doğal konuşma.
+- **Oda/personel:** backend fix (Batch 4) **UYGULANDI** (çok-hizmet NULL→[0] fallback, oda geçerlilik, `OdaHizmetler` fallback — `Controller.php`). Bu asistan da aynı API'yi çağırdığı için artık oda ataması doğru gelir.
 
 ---
 
@@ -136,24 +144,23 @@ asterisk -rx "dialplan reload"
 
 - **Medya topolojisi:** external media + eşzamanlı Playback bazı Asterisk sürümlerinde snoop/ayrı bridge ister — kutu üzerinde doğrula (`ari.js:_setupMedia`).
 - **Çok eşzamanlı çağrı:** external media portu çağrı başına ayrılmalı (`rtp.js` port havuzu).
-- **STT speechContext:** salonun gerçek hizmet adlarını boost olarak ilet (`stt.js`).
-- **`santralkarsilamametni` alan eşlemesi:** canlı yanıtla birebir doğrula (`callContext.js`).
-- **Paket alan adları:** `paket` / `enYakinRandevu` şeklini canlı `santralkarsilamametni` yanıtıyla doğrula (`callContext.js`, `tools.js`).
-- **TTS:** Google/Piper motoru (`tts.js` — şu an Polly); tam ücretsiz için **Piper** (Türkçe, CPU).
-- **Ollama streaming:** şu an non-streaming (cümlelere bölünüp çalınıyor); istenirse Ollama stream + delta ile ilk ses daha da öne çekilir.
+- **VAD eşiği:** `VAD_RMS`/`VAD_SILENCE_MS` telefon hattı sesine göre kutu üzerinde ayarlanmalı (`stt.js`).
+- **`santralkarsilamametni` alan eşlemesi:** `hizmetler`/`enYakinRandevu`/`paket` şekillerini canlı yanıtla doğrula (`callContext.js`, `tools.js`).
+- **Whisper latency:** CPU'da `small` model tur başına ~1-2sn; GPU ile çok daha hızlı. Model boyutu `WHISPER_MODEL`.
+- **Ollama streaming:** şu an non-streaming (cümlelere bölünüp çalınıyor); istenirse delta ile ilk ses öne çekilir.
 - **Latency:** yanıt akıtma + cümle-cümle TTS + barge-in UYGULANDI.
 
 ---
 
 ## Tamamen ücretsiz yığın (self-host, çağrı-başı 0 ücret)
 
-| Katman | Ücretsiz araç | Not |
+| Katman | Ücretsiz araç (VARSAYILAN) | Not |
 |---|---|---|
-| STT | **Whisper** (faster-whisper) | `whisperTranscribe.py` zaten var |
-| Beyin | **Ollama + Qwen** (`BRAIN=ollama`) | GPU: 7B/14B hızlı; CPU-only: 3B (gecikme artar) |
-| TTS | **Piper** (Türkçe) | CPU'da çalışır |
+| STT | **Whisper** (`whisper_server.py`, faster-whisper) | `pip install faster-whisper` |
+| Beyin | **Ollama + Qwen** (`BRAIN=ollama`) | GPU: 7B/14B hızlı; CPU-only: 3B |
+| TTS | **Edge-TTS** (`tr-TR-EmelNeural`) | `pip install edge-tts` + ffmpeg; offline istenirse Piper |
 
-Tek gerçek maliyet **donanım** (para değil): akıcılık için modest bir GPU idealdir; CPU-only'da 3B ile idare edilir. AI'yı santral kutusunda çalıştırmak zorunda değilsiniz — ağdaki herhangi bir makinede olabilir.
+Üçü de **artık varsayılan** — çağrı-başı sıfır ücret. Tek gerçek maliyet **donanım** (para değil): akıcılık için modest bir GPU idealdir; CPU-only'da `small` Whisper + 3B Qwen ile idare edilir. AI'yı santral kutusunda çalıştırmak zorunda değilsiniz — ağdaki (sidecar) makinede olabilir.
 
 ## Maliyet — API modu (`BRAIN=claude`, opsiyonel)
 - LLM Sonnet 5: görüşme başı ≈ 0,03–0,12 $; STT/TTS eklenince ~0,10–0,30 $. Ollama'ya geçince bu sıfırlanır (yalnız donanım).

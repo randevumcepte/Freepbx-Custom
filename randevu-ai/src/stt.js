@@ -1,50 +1,75 @@
 'use strict';
-const speech = require('@google-cloud/speech');
+const fs = require('fs');
+const axios = require('axios');
 const config = require('./config');
 
-// Google Cloud streaming STT sarmalayici. Asterisk external media'dan gelen 16kHz slin16
-// PCM parcalari write() ile beslenir; nihai (final) transcript geldiginde onFinal cagrilir.
-// Ara (interim) sonuclar barge-in / erken kesme icin kullanilabilir.
-//
-// NEDEN streaming: eski sistem "sabit pencere kaydet -> node soguk baslat -> Google'a gonder"
-// yapiyordu; kullanici susunca beklemek/konusma ortasindan kesmek buradan geliyordu.
-// Streaming'de sessizlik/bitis Google tarafinda gercek zamanli algilanir.
+// UCRETSIZ STT: external media'dan gelen PCM'i basit enerji-VAD ile biriktirir; konusma
+// bitince (sessizlik esigi) WAV yazar ve whisper_server.py'ye gonderir -> Turkce metin.
+// Interface eski Google surumuyle AYNI: new SttStream({onInterim,onFinal}); write(pcm); end().
+// (Google surumu istenirse STT_ENGINE=google ile ayri tutulabilir; varsayilan whisper.)
+
+function wavHeader(dataLen, sampleRate = 16000, ch = 1, bits = 16) {
+  const b = Buffer.alloc(44);
+  b.write('RIFF', 0); b.writeUInt32LE(36 + dataLen, 4); b.write('WAVE', 8);
+  b.write('fmt ', 12); b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(ch, 22); b.writeUInt32LE(sampleRate, 24);
+  b.writeUInt32LE(sampleRate * ch * bits / 8, 28); b.writeUInt16LE(ch * bits / 8, 32);
+  b.writeUInt16LE(bits, 34); b.write('data', 36); b.writeUInt32LE(dataLen, 40);
+  return b;
+}
+
+function rms(pcm) { // 16-bit LE
+  let sum = 0; const n = pcm.length >> 1;
+  for (let i = 0; i + 1 < pcm.length; i += 2) { const s = pcm.readInt16LE(i); sum += s * s; }
+  return n ? Math.sqrt(sum / n) : 0;
+}
+
 class SttStream {
   constructor({ onInterim, onFinal }) {
-    this.client = new speech.SpeechClient();
-    this.onInterim = onInterim || (() => {});
     this.onFinal = onFinal || (() => {});
-    this._start();
+    this.onInterim = onInterim || (() => {});
+    this.chunks = []; this.speech = false; this.silenceMs = 0; this.totalMs = 0; this.done = false;
+    this.vad = config.stt.vad;
   }
 
-  _start() {
-    this.stream = this.client
-      .streamingRecognize({
-        config: {
-          encoding: 'LINEAR16',
-          sampleRateHertz: config.stt.sampleRateHertz,
-          languageCode: config.stt.language,
-          model: 'telephony_short',
-          useEnhanced: true,
-          enableAutomaticPunctuation: true,
-          // TODO: speechContexts.phrases = salonun gercek hizmet adlari (boost).
-          // Eski transcribe2.js'te bu liste STATIK'ti; salona ozel hizmetler taninmiyordu.
-        },
-        interimResults: true,
-        singleUtterance: true, // konusma bitince stream biter -> onFinal
-      })
-      .on('error', (e) => this.onFinal('', e))
-      .on('data', (data) => {
-        const r = data.results && data.results[0];
-        if (!r) return;
-        const text = r.alternatives && r.alternatives[0] ? r.alternatives[0].transcript : '';
-        if (r.isFinal) this.onFinal(text.trim(), null);
-        else this.onInterim(text.trim());
-      });
+  write(pcm) {
+    if (this.done || !pcm || !pcm.length) return;
+    const ms = pcm.length / 32; // 16kHz 16-bit mono = 32 bayt/ms
+    this.totalMs += ms;
+    if (rms(pcm) >= this.vad.rmsThreshold) {
+      this.speech = true; this.silenceMs = 0; this.chunks.push(pcm);
+      this.onInterim('...'); // barge-in tetiklemesi icin (icerik onemli degil)
+    } else if (this.speech) {
+      this.silenceMs += ms; this.chunks.push(pcm);
+    }
+    if (this.speech && this.silenceMs >= this.vad.silenceMs) return this._finalize();
+    if (this.speech && this.totalMs >= this.vad.maxUtteranceMs) return this._finalize();
   }
 
-  write(pcmChunk) { if (this.stream && !this.stream.destroyed) this.stream.write(pcmChunk); }
-  end() { try { this.stream && this.stream.end(); } catch (_) {} }
+  end() {
+    if (this.done) return;
+    if (this.speech) this._finalize();
+    else { this.done = true; this.onFinal('', null); }
+  }
+
+  async _finalize() {
+    if (this.done) return;
+    this.done = true;
+    const wav = `/tmp/rai-stt-${process.pid}-${this.totalMs | 0}-${this.chunks.length}.wav`;
+    try {
+      const pcm = Buffer.concat(this.chunks);
+      fs.writeFileSync(wav, Buffer.concat([wavHeader(pcm.length), pcm]));
+      const { data } = await axios.post(
+        `${config.stt.whisper.serverUrl}/transcribe?file=${encodeURIComponent(wav)}`,
+        null, { timeout: 20000 }
+      );
+      fs.unlink(wav, () => {});
+      this.onFinal(data && data.text ? String(data.text).trim() : '', null);
+    } catch (e) {
+      fs.unlink(wav, () => {});
+      this.onFinal('', e);
+    }
+  }
 }
 
 module.exports = { SttStream };

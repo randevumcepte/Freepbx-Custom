@@ -35,15 +35,28 @@ module.exports = {
     model: process.env.CLAUDE_MODEL || 'claude-sonnet-5',
   },
   stt: {
+    engine: process.env.STT_ENGINE || 'whisper', // whisper (UCRETSIZ, yerel) | google (ucretli)
     language: process.env.STT_LANGUAGE || 'tr-TR',
     sampleRateHertz: 16000,
+    whisper: {
+      serverUrl: process.env.WHISPER_URL || 'http://127.0.0.1:5003', // whisper_server.py
+      model: process.env.WHISPER_MODEL || 'small', // tiny/base/small/medium; GPU'da large-v3
+    },
+    // VAD (konusma bitisi): telefon sesine gore RMS esigi kutu uzerinde ayarlanmali.
+    vad: {
+      silenceMs: parseInt(process.env.VAD_SILENCE_MS || '800', 10),
+      rmsThreshold: parseInt(process.env.VAD_RMS || '500', 10),
+      maxUtteranceMs: parseInt(process.env.VAD_MAX_MS || '12000', 10),
+    },
   },
   api: {
     base: process.env.API_BASE || 'https://app.randevumcepte.com.tr',
   },
   tts: {
-    engine: process.env.TTS_ENGINE || 'polly',
+    engine: process.env.TTS_ENGINE || 'edge', // edge (UCRETSIZ) | piper (ucretsiz offline) | polly (ucretli)
     outDir: process.env.TTS_OUT_DIR || '/var/spool/asterisk/monitor',
+    edgeVoice: process.env.EDGE_TTS_VOICE || 'tr-TR-EmelNeural', // veya tr-TR-AhmetNeural
+    piperModel: process.env.PIPER_MODEL || '/opt/piper/tr_TR-model.onnx',
   },
   timezone: 'Europe/Istanbul',
   istanbulNow,
