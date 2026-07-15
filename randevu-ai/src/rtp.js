@@ -13,8 +13,12 @@ class RtpServer extends EventEmitter {
   constructor() {
     super();
     this.sock = dgram.createSocket('udp4');
+    this._pktCount = 0;
     this.sock.on('message', (msg) => {
       if (msg.length <= 12) return;
+      this._pktCount++;
+      if (this._pktCount === 1) console.error(`[rtp] ILK PAKET geldi len=${msg.length}`);
+      if (this._pktCount % 250 === 0) console.error(`[rtp] ${this._pktCount} paket alindi`);
       const payload = msg.subarray(12); // RTP header'i atla
       this.emit('pcm', payload);
     });

@@ -29,6 +29,7 @@ class SttStream {
     this.onFinal = onFinal || (() => {});
     this.onInterim = onInterim || (() => {});
     this.chunks = []; this.speech = false; this.silenceMs = 0; this.totalMs = 0; this.done = false;
+    this.peakRms = 0;
     this.vad = config.stt.vad;
   }
 
@@ -36,7 +37,9 @@ class SttStream {
     if (this.done || !pcm || !pcm.length) return;
     const ms = pcm.length / 32; // 16kHz 16-bit mono = 32 bayt/ms
     this.totalMs += ms;
-    if (rms(pcm) >= this.vad.rmsThreshold) {
+    const level = rms(pcm);
+    if (level > this.peakRms) this.peakRms = level;
+    if (level >= this.vad.rmsThreshold) {
       this.speech = true; this.silenceMs = 0; this.chunks.push(pcm);
       this.onInterim('...'); // barge-in tetiklemesi icin (icerik onemli degil)
     } else if (this.speech) {
@@ -55,18 +58,20 @@ class SttStream {
   async _finalize() {
     if (this.done) return;
     this.done = true;
-    const wav = `/tmp/rai-stt-${process.pid}-${this.totalMs | 0}-${this.chunks.length}.wav`;
+    const wav = `/tmp/rai-stt-${process.pid}-${this.totalMs | 0}.wav`;
     try {
       const pcm = Buffer.concat(this.chunks);
       fs.writeFileSync(wav, Buffer.concat([wavHeader(pcm.length), pcm]));
+      // TESTTE: WAV silinmiyor, incelemek icin diskte kaliyor. Teshis logu:
+      console.error(`[stt] finalize wav=${wav} bytes=${pcm.length} totalMs=${this.totalMs | 0} peakRms=${this.peakRms | 0} chunks=${this.chunks.length}`);
       const { data } = await axios.post(
         `${config.stt.whisper.serverUrl}/transcribe?file=${encodeURIComponent(wav)}`,
-        null, { timeout: 20000 }
+        null, { timeout: 30000 }
       );
-      fs.unlink(wav, () => {});
+      console.error(`[stt] transcript="${(data && data.text) || ''}"`);
       this.onFinal(data && data.text ? String(data.text).trim() : '', null);
     } catch (e) {
-      fs.unlink(wav, () => {});
+      console.error(`[stt] HATA: ${e.message} (wav=${wav})`);
       this.onFinal('', e);
     }
   }
