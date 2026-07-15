@@ -24,16 +24,22 @@ class CallSession {
     this.finished = false;
   }
 
+  _log(m) { console.log(`[cagri ${this.callId}] ${m}`); }
+
   async start() {
+    this._log('basladi');
     await this.channel.answer();
 
     // DID'i Stasis args'tan al: channel.dialplan.exten burada 's' olur (yanlis DID -> API 500).
     const callerId = this.args[0] || (this.channel.caller && this.channel.caller.number) || '';
     const did = this.args[1] || (this.channel.dialplan && this.channel.dialplan.exten) || '';
+    this._log(`baglam yukleniyor caller=${callerId} did=${did}`);
     this.ctx = await loadCallContext(callerId, did);
+    this._log(`baglam OK salon="${this.ctx.salonAdi}" hizmet=${(this.ctx.hizmetler || []).length} randevu=${(this.ctx.enYakinRandevu || []).length}`);
     this.dialog = new Dialog(this.ctx);
 
     await this._setupMedia();
+    this._log('medya hazir');
 
     // RTP -> aktif STT'ye ses akisi
     this._pcmSink = (pcm) => { if (this.stt) this.stt.write(pcm); };
@@ -41,6 +47,7 @@ class CallSession {
 
     // Karsilama (cumleler geldikce kuyruga -> calinir)
     const opening = await this.dialog.opening((s) => this._enqueueSpeak(s));
+    this._log(`karsilama uretildi: "${opening.text}"`);
     await this._drain();
     if (opening.control) return this._applyControl(opening.control);
 
@@ -49,15 +56,17 @@ class CallSession {
 
   async _setupMedia() {
     // Sesi bizim RTP sunucumuza aynalamak icin external media kanali + mixing bridge.
+    this._log('bridge olusturuluyor');
     this.bridge = await this.ari.bridges.create({ type: 'mixing' });
     await this.bridge.addChannel({ channel: this.channel.id });
-
+    this._log('external media kanali olusturuluyor');
     this.extChannel = await this.ari.channels.externalMedia({
       app: config.ari.app,
       external_host: `${config.externalMedia.host}:${config.externalMedia.port}`,
       format: config.externalMedia.format, // slin16
     });
     await this.bridge.addChannel({ channel: this.extChannel.id });
+    this._log(`external media hazir ext=${this.extChannel.id}`);
     // TODO: cok es zamanli cagri icin external media portunu cagri basina ayir.
   }
 
@@ -101,12 +110,15 @@ class CallSession {
 
   async _playOne(text) {
     try {
+      this._log(`TTS uretiliyor: "${String(text).slice(0, 50)}"`);
       const media = await speak(text, this.callId);
+      this._log(`caliniyor: ${media}`);
       const playback = await this.channel.play({ media });
       this._activePlayback = playback;
       await new Promise((resolve) => playback.once('PlaybackFinished', resolve));
-    } catch (_) {
-      // TTS/cal hatasi: sessizce gec.
+      this._log('calma bitti');
+    } catch (e) {
+      this._log(`CALMA HATASI: ${e.message}`);
     } finally {
       this._activePlayback = null;
     }
