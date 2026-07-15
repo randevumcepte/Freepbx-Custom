@@ -19,23 +19,26 @@ class OllamaEngine {
     this.messages.push({ role: 'user', content: userContent });
 
     for (let guard = 0; guard < 8; guard++) {
+      const t0 = Date.now();
       const { data } = await axios.post(`${config.ollama.url}/api/chat`, {
         model: config.ollama.model,
         messages: this.messages,
         tools: this.toolsOpenAI,
         stream: false,
         options: { temperature: 0.2 }, // slot doldurma: kararli olsun
-      }, { timeout: 60000 });
+      }, { timeout: 90000 });
 
       const msg = data.message || {};
+      const calls = msg.tool_calls || [];
+      console.error(`[ollama] tur ${guard}: ${Date.now() - t0}ms, tool=${calls.length}, text="${(msg.content || '').slice(0, 60)}"`);
       this.messages.push(msg);
 
-      const calls = msg.tool_calls || [];
       if (calls.length) {
         for (const call of calls) {
           const fn = call.function || {};
           let args = fn.arguments;
           if (typeof args === 'string') { try { args = JSON.parse(args); } catch (_) { args = {}; } }
+          console.error(`[ollama] tool: ${fn.name}(${JSON.stringify(args).slice(0, 80)})`);
           const out = await this.executeTool(fn.name, args || {}, this.ctx);
           // Ollama tool yaniti: role 'tool'
           this.messages.push({ role: 'tool', name: fn.name, content: String(out.toModel) });

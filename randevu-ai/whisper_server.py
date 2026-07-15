@@ -31,7 +31,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if wav and os.path.exists(wav):
                 segments, _ = model.transcribe(
-                    wav, language="tr", vad_filter=True, beam_size=1
+                    wav, language="tr", vad_filter=True, beam_size=5,
+                    initial_prompt=(
+                        "Randevu almak, güncellemek, ertelemek, iptal etmek istiyorum. "
+                        "Hizmet, personel, saat, tarih, paket. Saç kesimi, cuma, "
+                        "öğleden sonra, pazartesi, evet, hayır."
+                    ),
                 )
                 text = " ".join(s.text.strip() for s in segments).strip()
         except Exception as e:

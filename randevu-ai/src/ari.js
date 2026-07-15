@@ -83,12 +83,17 @@ class CallSession {
         this.stt = null;
         this._log(`duydum: "${transcript}"${err ? ' (STT hata: ' + err.message + ')' : ''}`);
         if (err) return this._applyControl('transfer');
-        // Yanit stream olur; cumleler geldikce kuyruga girer ve calar (uretimle es zamanli).
-        const res = await this.dialog.handleUtterance(transcript, (s) => this._enqueueSpeak(s));
-        this._log(`cevap: "${res.text}"`);
-        await this._drain();
-        if (res.control) return this._applyControl(res.control);
-        this._listen(); // sonraki tur
+        try {
+          // Yanit stream olur; cumleler geldikce kuyruga girer ve calar (uretimle es zamanli).
+          const res = await this.dialog.handleUtterance(transcript, (s) => this._enqueueSpeak(s));
+          this._log(`cevap: "${res.text}"`);
+          await this._drain();
+          if (res.control) return this._applyControl(res.control);
+          this._listen(); // sonraki tur
+        } catch (e) {
+          this._log(`DIYALOG HATASI: ${e.message}`); // eskiden sessizce takiliyordu
+          this._applyControl('transfer');
+        }
       },
     });
   }
