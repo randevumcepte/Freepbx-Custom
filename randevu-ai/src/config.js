@@ -30,6 +30,14 @@ module.exports = {
     // GPU varsa: qwen2.5:14b | orta: qwen2.5:7b | CPU-only/dusuk: qwen2.5:3b
     model: process.env.OLLAMA_MODEL || 'qwen2.5:7b',
   },
+  // Groq: UCRETSIZ tier + COK HIZLI (bulut LPU). OpenAI-uyumlu + tool-calling.
+  // STT/TTS santralde kalir; sadece beyin Groq'ta. console.groq.com'dan ucretsiz key.
+  groq: {
+    url: process.env.GROQ_URL || 'https://api.groq.com/openai/v1',
+    apiKey: process.env.GROQ_API_KEY || '',
+    // Denge: llama-3.3-70b-versatile | daha hizli: llama-3.1-8b-instant
+    model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+  },
   claude: {
     // API kullanilirsa. Denge: claude-sonnet-5 | hizli: haiku-4-5 | en zeki: opus-4-8
     model: process.env.CLAUDE_MODEL || 'claude-sonnet-5',

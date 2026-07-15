@@ -21,6 +21,9 @@ class Dialog {
     if (config.brain === 'claude') {
       const { ClaudeEngine } = require('./engines/claude');
       this.engine = new ClaudeEngine({ system, ctx: this.ctx, tools: toolDefinitions(), executeTool });
+    } else if (config.brain === 'groq') {
+      const { GroqEngine } = require('./engines/groq');
+      this.engine = new GroqEngine({ system, ctx: this.ctx, toolsOpenAI: toolDefinitionsOpenAI(), executeTool });
     } else {
       const { OllamaEngine } = require('./engines/ollama');
       this.engine = new OllamaEngine({ system, ctx: this.ctx, toolsOpenAI: toolDefinitionsOpenAI(), executeTool });
