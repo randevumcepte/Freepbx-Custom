@@ -24,6 +24,29 @@ function rms(pcm) { // 16-bit LE
   return n ? Math.sqrt(sum / n) : 0;
 }
 
+// Transcript motoru: groq (bulut whisper-large-v3, hizli+dogru) veya yerel whisper_server.
+async function transcribe(wav) {
+  if (config.stt.engine === 'groq') {
+    const buf = fs.readFileSync(wav);
+    const fd = new FormData(); // Node 18+ global
+    fd.append('file', new Blob([buf], { type: 'audio/wav' }), 'audio.wav');
+    fd.append('model', config.stt.groqModel);
+    fd.append('language', 'tr');
+    fd.append('prompt', 'Randevu, hizmet, personel, saat, tarih, iptal, güncelleme, erteleme, saç kesimi, cuma, öğleden sonra, pazartesi, evet, hayır.');
+    const resp = await fetch(`${config.groq.url}/audio/transcriptions`, {
+      method: 'POST', headers: { Authorization: `Bearer ${config.groq.apiKey}` }, body: fd,
+    });
+    if (!resp.ok) throw new Error(`groq stt HTTP ${resp.status}`);
+    const data = await resp.json();
+    return data && data.text ? String(data.text).trim() : '';
+  }
+  const { data } = await axios.post(
+    `${config.stt.whisper.serverUrl}/transcribe?file=${encodeURIComponent(wav)}`,
+    null, { timeout: 30000 }
+  );
+  return data && data.text ? String(data.text).trim() : '';
+}
+
 class SttStream {
   constructor({ onInterim, onFinal }) {
     this.onFinal = onFinal || (() => {});
@@ -63,14 +86,11 @@ class SttStream {
       const pcm = Buffer.concat(this.chunks);
       fs.writeFileSync(wav, Buffer.concat([wavHeader(pcm.length), pcm]));
       // TESTTE: WAV silinmiyor, incelemek icin diskte kaliyor. Teshis logu:
-      console.error(`[stt] finalize wav=${wav} bytes=${pcm.length} totalMs=${this.totalMs | 0} peakRms=${this.peakRms | 0} chunks=${this.chunks.length}`);
-      const { data } = await axios.post(
-        `${config.stt.whisper.serverUrl}/transcribe?file=${encodeURIComponent(wav)}`,
-        null, { timeout: 30000 }
-      );
-      console.error(`[stt] transcript="${(data && data.text) || ''}"`);
-      fs.unlink(wav, () => {}); // /tmp sismesin (teshis bitti)
-      this.onFinal(data && data.text ? String(data.text).trim() : '', null);
+      console.error(`[stt] finalize wav=${wav} bytes=${pcm.length} totalMs=${this.totalMs | 0} peakRms=${this.peakRms | 0} engine=${config.stt.engine}`);
+      const text = await transcribe(wav);
+      console.error(`[stt] transcript="${text}"`);
+      fs.unlink(wav, () => {}); // /tmp sismesin
+      this.onFinal(text, null);
     } catch (e) {
       console.error(`[stt] HATA: ${e.message} (wav=${wav})`);
       fs.unlink(wav, () => {});

@@ -43,9 +43,10 @@ module.exports = {
     model: process.env.CLAUDE_MODEL || 'claude-sonnet-5',
   },
   stt: {
-    engine: process.env.STT_ENGINE || 'whisper', // whisper (UCRETSIZ, yerel) | google (ucretli)
+    engine: process.env.STT_ENGINE || 'whisper', // groq (bulut, hizli+dogru) | whisper (yerel) | google
     language: process.env.STT_LANGUAGE || 'tr-TR',
     sampleRateHertz: 16000,
+    groqModel: process.env.GROQ_STT_MODEL || 'whisper-large-v3-turbo', // veya whisper-large-v3 (biraz daha dogru)
     whisper: {
       serverUrl: process.env.WHISPER_URL || 'http://127.0.0.1:5003', // whisper_server.py
       model: process.env.WHISPER_MODEL || 'small', // tiny/base/small/medium; GPU'da large-v3
