@@ -73,6 +73,7 @@ class CallSession {
   // Bir tur dinle: STT stream ac, final transcript gelince Dialog'a ver.
   _listen() {
     if (this.finished) return;
+    this._log('dinliyor...');
     this.stt = new SttStream({
       onInterim: (t) => {
         // Barge-in: asistan konusurken musteri konusmaya baslarsa calmayi kes + kuyrugu bosalt.
@@ -80,9 +81,11 @@ class CallSession {
       },
       onFinal: async (transcript, err) => {
         this.stt = null;
+        this._log(`duydum: "${transcript}"${err ? ' (STT hata: ' + err.message + ')' : ''}`);
         if (err) return this._applyControl('transfer');
         // Yanit stream olur; cumleler geldikce kuyruga girer ve calar (uretimle es zamanli).
         const res = await this.dialog.handleUtterance(transcript, (s) => this._enqueueSpeak(s));
+        this._log(`cevap: "${res.text}"`);
         await this._drain();
         if (res.control) return this._applyControl(res.control);
         this._listen(); // sonraki tur
