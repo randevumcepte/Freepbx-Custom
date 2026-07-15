@@ -30,11 +30,11 @@ class Dialog {
   opening(onSentence) {
     // Karsilama SABIT sablon: LLM beklemeden hemen calar (buyuk katalog + CPU model ile ilk
     // inference yavas; karsilama icin LLM gerekmez). Boylece medya yolu da hemen dogrulanir.
-    let t = `Merhaba, ${this.ctx.salonAdi || 'salonumuz'} randevu asistanina hos geldiniz. `;
+    let t = `Merhaba, ${this.ctx.salonAdi || 'salonumuz'} randevu asistanına hoş geldiniz. `;
     if (this.ctx.paket && this.ctx.paket.bekleyenSeans) {
-      t += `${this.ctx.paket.paketAdi} paketinizden randevu olusturmami ister misiniz, yoksa baska bir islem mi yapalim?`;
+      t += `${this.ctx.paket.paketAdi} paketinizden randevu oluşturmamı ister misiniz, yoksa başka bir işlem mi yapalım?`;
     } else {
-      t += `Randevu almak, ertelemek veya iptal etmek icin nasil yardimci olabilirim?`;
+      t += `Randevu almak, ertelemek veya iptal etmek için nasıl yardımcı olabilirim?`;
     }
     if (onSentence) onSentence(t);
     return Promise.resolve({ text: t, control: null });

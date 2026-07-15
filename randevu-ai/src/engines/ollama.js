@@ -48,8 +48,8 @@ class OllamaEngine {
       return { text, control: this.ctx.control };
     }
 
-    emitSentences('Sizi operatore aktariyorum.', onSentence);
-    return { text: 'Sizi operatore aktariyorum.', control: 'transfer' };
+    emitSentences('Sizi operatöre aktarıyorum.', onSentence);
+    return { text: 'Sizi operatöre aktarıyorum.', control: 'transfer' };
   }
 }
 

@@ -52,7 +52,7 @@ class ClaudeEngine {
     }
 
     if (chunker) chunker.flush();
-    return { text: 'Sizi operatore aktariyorum.', control: 'transfer' };
+    return { text: 'Sizi operatöre aktarıyorum.', control: 'transfer' };
   }
 }
 
