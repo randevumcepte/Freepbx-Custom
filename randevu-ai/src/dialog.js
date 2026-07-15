@@ -28,9 +28,11 @@ class Dialog {
   }
 
   opening(onSentence) {
-    // Karsilama SABIT sablon: LLM beklemeden hemen calar (buyuk katalog + CPU model ile ilk
-    // inference yavas; karsilama icin LLM gerekmez). Boylece medya yolu da hemen dogrulanir.
-    let t = `Merhaba, ${this.ctx.salonAdi || 'salonumuz'} randevu asistanına hoş geldiniz. `;
+    // Karsilama: manuel from-trunk-custom ile AYNI -> API'nin dondurdugu kisisel metni kullan
+    // ("Sayın X, <salon karşılama telaffuzu> hoşgeldiniz"). Yoksa jenerik. LLM beklemez.
+    let t = this.ctx.karsilamaMetni
+      ? (String(this.ctx.karsilamaMetni).trim().replace(/\s+/g, ' ') + ' ')
+      : `Merhaba, ${this.ctx.salonAdi || 'salonumuz'} randevu asistanına hoş geldiniz. `;
     if (this.ctx.paket && this.ctx.paket.bekleyenSeans) {
       t += `${this.ctx.paket.paketAdi} paketinizden randevu oluşturmamı ister misiniz, yoksa başka bir işlem mi yapalım?`;
     } else {

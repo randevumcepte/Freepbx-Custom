@@ -2,6 +2,22 @@
 const axios = require('axios');
 const config = require('./config');
 
+// Karsilama metni API'de base64 gelir (manuel akis pollysimple.php ile base64_decode ediyor).
+// Base64 gibi gorunup mantikli metne coozuluyorsa decode et; degilse oldugu gibi birak.
+function b64decodeMaybe(s) {
+  if (!s || typeof s !== "string") return null;
+  try {
+    const dec = Buffer.from(s, "base64").toString("utf8");
+    let ctrl = false;
+    for (let i = 0; i < dec.length; i++) {
+      const c = dec.charCodeAt(i);
+      if (c < 32 && c !== 9 && c !== 10 && c !== 13) { ctrl = true; break; }
+    }
+    if (dec && !ctrl && /[A-Za-zÇĞİÖŞÜçğıöşü]/.test(dec)) return dec.trim();
+  } catch (_) {}
+  return s;
+}
+
 // Cagri basinda salon/musteri/hizmet baglamini yukler. Mevcut karsilama_yeni_2.php ile AYNI
 // API'yi kullanir: POST /api/v1/santralkarsilamametni { callerid, channel }.
 // Donen yaniti Dialog'un bekledigi sekle map ederiz.
@@ -45,6 +61,9 @@ async function loadCallContext(callerId, did) {
     userId: data.user_id ?? data.userId ?? null,
     musteriAdi: data.musteriAdi ?? data.musteri_adi ?? null,
     operatorKanali: data.operator_kanali ?? data.operatorKanali ?? null,
+    // Manuel from-trunk-custom ile AYNI kisisel karsilama ("Sayın X, <salon telaffuz> hoşgeldiniz").
+    // API base64 doner (pollysimple.php base64_decode ediyordu) -> decode et.
+    karsilamaMetni: b64decodeMaybe(data.karsilama_metni ?? data.karsilamaMetni),
     hizmetler, enYakinRandevu, paket,
   };
 }
