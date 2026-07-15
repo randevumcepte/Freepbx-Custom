@@ -69,9 +69,11 @@ class SttStream {
         null, { timeout: 30000 }
       );
       console.error(`[stt] transcript="${(data && data.text) || ''}"`);
+      fs.unlink(wav, () => {}); // /tmp sismesin (teshis bitti)
       this.onFinal(data && data.text ? String(data.text).trim() : '', null);
     } catch (e) {
       console.error(`[stt] HATA: ${e.message} (wav=${wav})`);
+      fs.unlink(wav, () => {});
       this.onFinal('', e);
     }
   }

@@ -19,7 +19,10 @@ class RtpServer extends EventEmitter {
       this._pktCount++;
       if (this._pktCount === 1) console.error(`[rtp] ILK PAKET geldi len=${msg.length}`);
       if (this._pktCount % 250 === 0) console.error(`[rtp] ${this._pktCount} paket alindi`);
-      const payload = msg.subarray(12); // RTP header'i atla
+      // Asterisk external-media (slin16/L16) RTP'yi BIG-ENDIAN gonderiyor; Node LE okur.
+      // Swap16 ile LE'ye cevir (yoksa ses cope donuyor, Whisper bos donuyor).
+      const payload = Buffer.from(msg.subarray(12)); // RTP header at + kopya (swap in-place)
+      if (payload.length % 2 === 0) payload.swap16();
       this.emit('pcm', payload);
     });
   }
