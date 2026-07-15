@@ -7,6 +7,11 @@ const config = require('./config');
 //    gibi hassas alanlari uretmez (tool bunlari cagri baglamindan alir).
 const SPECS = [
   {
+    name: 'hizmet_ara',
+    description: 'Musterinin soyledigi hizmet adini salonun hizmet katalogunda arar, en yakin adaylari (salonHizmetId + ad) doner. Randevu OLUSTURMAK icin hizmeti bulmak uzere ONCE bunu cagir.',
+    schema: { type: 'object', properties: { metin: { type: 'string', description: 'Musterinin soyledigi hizmet ifadesi' } }, required: ['metin'] },
+  },
+  {
     name: 'uygun_randevu_bul',
     description: 'Verilen tarih-saat icin uygun slotu backend\'den sorar. YENI randevuda randevu_olustur\'dan, GUNCELLEMEde randevu_guncelle\'den ONCE cagrilir. Guncelleme ise randevuId ver (hizmet/personel gerekmez).',
     schema: {
@@ -70,6 +75,35 @@ function toolDefinitionsOpenAI() {
 function splitTarihSaat(ts) {
   const [d, t = '00:00'] = String(ts).trim().split(/[ T]/);
   return { tarih: d, saat: t.length === 5 ? `${t}:00` : t };
+}
+
+function turkceNorm(s) {
+  return String(s || '').toLowerCase()
+    .replace(/ç/g, 'c').replace(/ğ/g, 'g').replace(/ı/g, 'i').replace(/İ/g, 'i')
+    .replace(/ö/g, 'o').replace(/ş/g, 's').replace(/ü/g, 'u')
+    .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Musterinin dedigi hizmeti katalogda fuzzy arar (hizmetler promptta DEGIL, burada eslesir).
+function hizmetAra(input, ctx) {
+  const q = turkceNorm(input.metin);
+  if (!q) return { toModel: 'Bos ifade. Musteriden hizmeti tekrar iste.' };
+  const qTokens = q.split(' ').filter(Boolean);
+  const scored = (ctx.hizmetler || []).map(h => {
+    const n = turkceNorm(h.ad);
+    let score = 0;
+    if (n === q) score = 100;
+    else if (n && (n.includes(q) || q.includes(n))) score = 90;
+    else {
+      const nTokens = n.split(' ');
+      const hit = qTokens.filter(t => t.length > 2 && nTokens.some(x => x.includes(t) || t.includes(x))).length;
+      score = qTokens.length ? Math.round((hit / qTokens.length) * 80) : 0;
+    }
+    return { h, score };
+  }).filter(x => x.score >= 45).sort((a, b) => b.score - a.score).slice(0, 5);
+  if (!scored.length) return { toModel: `"${input.metin}" icin eslesen hizmet yok. Musteriye kibarca veremedigimizi soyle veya farkli ifade iste.` };
+  const list = scored.map(x => `salonHizmetId=${x.h.salonHizmetId} "${x.h.ad}"`).join(' | ');
+  return { toModel: `Adaylar: ${list}. En uygun olani sec; birden fazla yakinsa musteriye dogrula.` };
 }
 
 // ── uygun_randevu_bul ────────────────────────────────────────────────────────
@@ -198,6 +232,7 @@ async function executeTool(name, input, ctx) {
   try {
     input = input || {};
     switch (name) {
+      case 'hizmet_ara':        return hizmetAra(input, ctx);
       case 'uygun_randevu_bul': return await uygunRandevuBul(input, ctx);
       case 'randevu_olustur':   return await randevuOlustur(input, ctx);
       case 'randevu_guncelle':  return await randevuGuncelle(input, ctx);

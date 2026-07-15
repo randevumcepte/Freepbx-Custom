@@ -6,10 +6,7 @@
 //         enYakinRandevu: [{randevuId, tarih, saat, hizmetler, paketAdi, seansNo}],
 //         paket: {paketAdi, bekleyenSeans, ...} | null }
 function buildSystemPrompt(ctx) {
-  const hizmetSatir = (ctx.hizmetler || []).map(h => {
-    const pers = (h.personeller || []).map(p => `${p.ad}(#${p.id})`).join(', ') || 'farketmez';
-    return `- salonHizmetId=${h.salonHizmetId} | "${h.ad}" | ${h.sureDk} dk | ${h.fiyat} TL | personel: ${pers}`;
-  }).join('\n') || '(hizmet listesi bos)';
+  const hizmetSayisi = (ctx.hizmetler || []).length;
 
   const randevuSatir = (ctx.enYakinRandevu || []).map((r, i) => {
     const paket = r.paketAdi ? ` (${r.paketAdi} paketi ${r.seansNo || ''}. seans)` : '';
@@ -32,8 +29,9 @@ MUSTERI: ${ctx.musteriAdi || 'bilinmiyor'}
 YAPABILECEGIN 3 ISLEM: randevu OLUSTUR, randevu GUNCELLE (tarih degistir), randevu IPTAL.
 Once musterinin hangisini istedigini anla.
 
-HIZMETLER (sadece bu listeden secilebilir):
-${hizmetSatir}
+HIZMET SECIMI: Salonda ${hizmetSayisi} hizmet var; tam liste burada YOK. Musteri bir hizmet
+soyleyince "hizmet_ara" tool'unu cagir (metin=musterinin dedigi ifade); donen adaylardan dogru
+salonHizmetId'yi sec. Birden fazla yakin aday varsa musteriye tek soruyla dogrula.
 
 MUSTERININ MEVCUT RANDEVULARI (guncelleme/iptal icin buradan sec):
 ${randevuSatir}
@@ -41,8 +39,9 @@ ${randevuSatir}
 PAKET: ${paketSatir}
 
 AKIS KURALLARI:
-• OLUSTUR: hizmet + tarih + saat topla (personel opsiyonel; "farketmez" ise personelId verme).
-  -> uygun_randevu_bul -> (alternatif ise onerilen saati SOYLE) -> ONAY al -> randevu_olustur.
+• OLUSTUR: Hizmeti hizmet_ara ile bul (salonHizmetId). Tarih+saat al (personel opsiyonel;
+  "farketmez" ise personelId verme). -> uygun_randevu_bul(salonHizmetId, tarihSaat)
+  -> (alternatif ise onerilen saati SOYLE) -> ONAY al -> randevu_olustur.
 • PAKETTEN OLUSTUR: paket varsa ve musteri kabul ederse hizmet/personel SORMA; sadece tarih+saat al.
   -> uygun_randevu_bul(paketten=true) -> ONAY -> randevu_olustur(paketten=true).
 • GUNCELLE (erteleme): Birden fazla randevu varsa hangisini belirle (musteri "birinci/ikinci/sonuncu"
