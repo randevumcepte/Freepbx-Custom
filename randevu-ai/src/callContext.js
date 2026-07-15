@@ -24,7 +24,8 @@ async function loadCallContext(callerId, did) {
 
   // Mevcut randevular (guncelleme/iptal icin) — karsilama enYakinRandevu doner.
   const enYakinRandevu = (data.enYakinRandevu || []).map(r => ({
-    randevuId: r.randevuid ?? r.randevu_id ?? r.id,
+    // Menuler 'randevuId' (camelCase) kullaniyor; digerleri de fallback.
+    randevuId: r.randevuId ?? r.randevuid ?? r.randevu_id ?? r.id,
     tarih: r.tarih, saat: r.saat,
     hizmetler: r.hizmetler, paketAdi: r.paketAdi ?? r.paket_adi, seansNo: r.seansNo ?? r.seans_no,
   }));
