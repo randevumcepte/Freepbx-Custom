@@ -43,6 +43,11 @@ class OllamaEngine {
           // Ollama tool yaniti: role 'tool'
           this.messages.push({ role: 'tool', name: fn.name, content: String(out.toModel) });
         }
+        if (this.ctx.control) { // operatore_aktar / arama_kapat -> HEMEN bitir
+          const kapanis = this.ctx.control === 'transfer' ? 'Sizi operatöre aktarıyorum, lütfen hatta kalın.' : 'İyi günler dilerim, sağlıklı günler.';
+          emitSentences(kapanis, onSentence);
+          return { text: kapanis, control: this.ctx.control };
+        }
         continue; // model tool sonuclariyla devam etsin
       }
 

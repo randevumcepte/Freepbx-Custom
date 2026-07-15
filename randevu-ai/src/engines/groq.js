@@ -52,6 +52,11 @@ class GroqEngine {
           // OpenAI format tool sonucu: tool_call_id ZORUNLU
           this.messages.push({ role: 'tool', tool_call_id: call.id, content: String(out.toModel) });
         }
+        if (this.ctx.control) { // operatore_aktar / arama_kapat -> HEMEN bitir (dongu devam etmesin, meta-anlati/cifte TTS/kanal yarisi olmasin)
+          const kapanis = this.ctx.control === 'transfer' ? 'Sizi operatöre aktarıyorum, lütfen hatta kalın.' : 'İyi günler dilerim, sağlıklı günler.';
+          emitSentences(kapanis, onSentence);
+          return { text: kapanis, control: this.ctx.control };
+        }
         continue; // model tool sonuclariyla devam etsin
       }
 
