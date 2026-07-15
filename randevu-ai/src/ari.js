@@ -12,10 +12,11 @@ const { loadCallContext } = require('./callContext');
 // ⚠️ MEDYA TOPOLOJISI (external media + ayni anda Playback) Asterisk surumune gore
 // ince ayar ister; asagisi calisir bir iskelet, kutu uzerinde dogrulanmali.
 class CallSession {
-  constructor(ari, channel, rtp) {
+  constructor(ari, channel, rtp, args) {
     this.ari = ari;
     this.channel = channel;
     this.rtp = rtp;         // global RtpServer
+    this.args = args || []; // Stasis args: [0]=arayan numara, [1]=FROM_DID
     this.callId = channel.id;
     this.stt = null;
     this.playing = false;
@@ -26,8 +27,9 @@ class CallSession {
   async start() {
     await this.channel.answer();
 
-    const callerId = this.channel.caller && this.channel.caller.number;
-    const did = this.channel.dialplan && this.channel.dialplan.exten;
+    // DID'i Stasis args'tan al: channel.dialplan.exten burada 's' olur (yanlis DID -> API 500).
+    const callerId = this.args[0] || (this.channel.caller && this.channel.caller.number) || '';
+    const did = this.args[1] || (this.channel.dialplan && this.channel.dialplan.exten) || '';
     this.ctx = await loadCallContext(callerId, did);
     this.dialog = new Dialog(this.ctx);
 

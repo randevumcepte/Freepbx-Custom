@@ -16,8 +16,9 @@ async function main() {
   ari.on('StasisStart', async (event, channel) => {
     // External media kanali da bu app'e StasisStart uretir; onu atla.
     if (channel.name && channel.name.startsWith('UnicastRTP')) return;
-    console.log(`[randevu-ai] Yeni cagri: ${channel.id} (${channel.caller && channel.caller.number})`);
-    const session = new CallSession(ari, channel, rtp);
+    console.log(`[randevu-ai] Yeni cagri: ${channel.id} (${channel.caller && channel.caller.number}) args=${JSON.stringify(event.args || [])}`);
+    // Stasis(randevu_ai, ${CALLERID(num)}, ${FROM_DID}) -> event.args = [arayan, DID]
+    const session = new CallSession(ari, channel, rtp, event.args || []);
     sessions.set(channel.id, session);
     try {
       await session.start();
