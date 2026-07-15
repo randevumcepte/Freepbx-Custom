@@ -10,8 +10,9 @@ function istanbulNow() {
 
 module.exports = {
   ari: {
+    // SIDECAR: AI Laravel sunucuda, Asterisk ayri sunucuda -> ARI_URL = Asterisk IP.
     url: process.env.ARI_URL || 'http://127.0.0.1:8088',
-    user: process.env.ARI_USER || 'admin',
+    user: process.env.ARI_USER || 'sidecar', // FreePBX ari_additional.conf [sidecar]
     pass: process.env.ARI_PASS || '',
     app: process.env.ARI_APP || 'randevu_ai',
   },
