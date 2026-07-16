@@ -147,6 +147,7 @@ async function uygunRandevuBul(input, ctx) {
     return { toModel: JSON.stringify({ uygunTarihSaat: slot.tarihSaat, alternatifOneri: false, not: '(STUB) uygun. Kisa onay iste.' }) };
   }
 
+  console.error(`[uygun_randevu_bul] salonHizmetId=${salonHizmetId} salonId=${ctx.salonId} tarihSaat=${input.tarihSaat} paketten=${paketten}`);
   const { data } = await axios.post(`${config.api.base}/api/v1/randevuUygunlukKontrolEt`, {
     salonHizmetId, salonId: ctx.salonId, tarihSaat: input.tarihSaat,
     personelId: input.personelId ?? null, paketBilgi: paketten ? ctx.paket : null,
@@ -252,6 +253,9 @@ async function executeTool(name, input, ctx) {
       default: return { toModel: `Bilinmeyen tool: ${name}`, isError: true };
     }
   } catch (err) {
+    const st = err.response && err.response.status;
+    const body = err.response && err.response.data;
+    console.error(`[tool ${name}] API HATASI status=${st} body=${JSON.stringify(body).slice(0, 300)} (${err.message})`);
     return { toModel: `Tool hatasi (${name}): ${err.message}. Musteriyi operatore aktar.`, isError: true };
   }
 }

@@ -31,7 +31,8 @@ async function loadCallContext(callerId, did) {
     { headers: { 'Content-Type': 'application/json' }, timeout: 15000 });
 
   const hizmetler = (data.hizmetler || []).map(h => ({
-    salonHizmetId: h.salonHizmetId ?? h.salon_hizmet_id ?? h.id,
+    // Manuel akis randevuUygunlukKontrolEt'e salonHizmetId olarak h.hizmetId gonderiyor -> ONCE onu al.
+    salonHizmetId: h.hizmetId ?? h.salonHizmetId ?? h.salon_hizmet_id ?? h.id,
     ad: h.hizmetAdi ?? h.ad ?? h.hizmet_adi,
     sureDk: h.sureDk ?? h.sure_dk ?? h.sure,
     fiyat: h.fiyat,
