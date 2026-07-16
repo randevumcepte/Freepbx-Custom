@@ -9,7 +9,30 @@ const config = require('./config');
 
 function run(cmd, args, cb) { execFile(cmd, args, { timeout: 20000, maxBuffer: 1024 * 1024 * 8 }, cb); }
 
+// Acik Llama modelleri Turkce diakritigi bazen dusuruyor ("baska"). TTS'ten ONCE alan
+// sozlugu ile duzelt (sesin dogru okunmasi icin). Sadece ASCII hali sozlukte olan kelimeler.
+const TR_FIX = {
+  baska: 'başka', icin: 'için', gunu: 'günü', gunler: 'günler', gun: 'gün', degil: 'değil',
+  saglikli: 'sağlıklı', saglik: 'sağlık', ogleden: 'öğleden', sali: 'salı', carsamba: 'çarşamba',
+  persembe: 'perşembe', sac: 'saç', manikur: 'manikür', tesekkur: 'teşekkür', tesekkurler: 'teşekkürler',
+  lutfen: 'lütfen', operatore: 'operatöre', operator: 'operatör', guncelle: 'güncelle',
+  guncelleme: 'güncelleme', guncelleyelim: 'güncelleyelim', olustur: 'oluştur',
+  olusturuyorum: 'oluşturuyorum', olusturuldu: 'oluşturuldu', olusturmak: 'oluşturmak',
+  olusturayim: 'oluşturayım', musteri: 'müşteri', yapalim: 'yapalım', gorusme: 'görüşme',
+  gorusuruz: 'görüşürüz', hosgeldiniz: 'hoş geldiniz', hos: 'hoş', gunaydin: 'günaydın',
+  onayliyor: 'onaylıyor', onayliyormusunuz: 'onaylıyor musunuz', hangi: 'hangi',
+  istiyorsunuz: 'istiyorsunuz', aktariyorum: 'aktarıyorum', bekleyin: 'bekleyin',
+};
+function fixTurkce(s) {
+  return String(s || '').replace(/[A-Za-zçğıöşüÇĞİÖŞÜ]+/g, (w) => {
+    const t = TR_FIX[w.toLowerCase()];
+    if (!t) return w;
+    return w[0] === w[0].toUpperCase() ? t.charAt(0).toLocaleUpperCase('tr') + t.slice(1) : t;
+  });
+}
+
 function speak(text, callId) {
+  text = fixTurkce(text);
   const base = path.join(config.tts.outDir, `rai-${callId}-${process.pid}-${Math.round(process.hrtime()[1] / 1000)}`);
   return new Promise((resolve, reject) => {
     if (config.tts.engine === 'edge') {
