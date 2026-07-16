@@ -1,7 +1,9 @@
 'use strict';
 const axios = require('axios');
 const config = require('./../config');
-const { emitSentences } = require('./../chunker');
+// Groq yaniti TEK seferde doner (stream degil) -> tum metni TEK TTS'te oku (cumle cumle bolme;
+// bolersek aralara sessizlik/bekleme giriyor). onSentence'a butun yaniti bir kez veriyoruz.
+function speakAll(text, onSentence) { const t = String(text || '').trim(); if (t && onSentence) onSentence(t); }
 
 // UCRETSIZ + COK HIZLI beyin: Groq (bulut LPU, OpenAI-uyumlu + tool-calling).
 // Ollama ile fark: yanit data.choices[0].message; tool_calls.function.arguments STRING (JSON);
@@ -54,18 +56,18 @@ class GroqEngine {
         }
         if (this.ctx.control) { // operatore_aktar / arama_kapat -> HEMEN bitir (dongu devam etmesin, meta-anlati/cifte TTS/kanal yarisi olmasin)
           const kapanis = this.ctx.control === 'transfer' ? 'Sizi operatöre aktarıyorum, lütfen hatta kalın.' : 'İyi günler dilerim, sağlıklı günler.';
-          emitSentences(kapanis, onSentence);
+          speakAll(kapanis, onSentence);
           return { text: kapanis, control: this.ctx.control };
         }
         continue; // model tool sonuclariyla devam etsin
       }
 
       const text = (msg.content || '').trim();
-      emitSentences(text, onSentence);
+      speakAll(text, onSentence);
       return { text, control: this.ctx.control };
     }
 
-    emitSentences('Sizi operatöre aktarıyorum.', onSentence);
+    speakAll('Sizi operatöre aktarıyorum.', onSentence);
     return { text: 'Sizi operatöre aktarıyorum.', control: 'transfer' };
   }
 }

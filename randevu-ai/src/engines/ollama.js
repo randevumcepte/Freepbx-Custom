@@ -1,7 +1,9 @@
 'use strict';
 const axios = require('axios');
 const config = require('./../config');
-const { emitSentences } = require('./../chunker');
+// Non-streaming: yanit tek seferde gelir -> tum metni TEK TTS'te oku (cumle cumle bolme; bolersek
+// aralara bekleme giriyor).
+function speakAll(text, onSentence) { const t = String(text || '').trim(); if (t && onSentence) onSentence(t); }
 
 // UCRETSIZ / YEREL beyin: Ollama (Qwen). Cagri basi sifir ucret.
 // Ollama /api/chat OpenAI-uyumlu "tools" destekler; tool_calls doner.
@@ -45,18 +47,18 @@ class OllamaEngine {
         }
         if (this.ctx.control) { // operatore_aktar / arama_kapat -> HEMEN bitir
           const kapanis = this.ctx.control === 'transfer' ? 'Sizi operatöre aktarıyorum, lütfen hatta kalın.' : 'İyi günler dilerim, sağlıklı günler.';
-          emitSentences(kapanis, onSentence);
+          speakAll(kapanis, onSentence);
           return { text: kapanis, control: this.ctx.control };
         }
         continue; // model tool sonuclariyla devam etsin
       }
 
       const text = (msg.content || '').trim();
-      emitSentences(text, onSentence);
+      speakAll(text, onSentence);
       return { text, control: this.ctx.control };
     }
 
-    emitSentences('Sizi operatöre aktarıyorum.', onSentence);
+    speakAll('Sizi operatöre aktarıyorum.', onSentence);
     return { text: 'Sizi operatöre aktarıyorum.', control: 'transfer' };
   }
 }

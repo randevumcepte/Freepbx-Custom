@@ -45,11 +45,17 @@ ${randevuSatir}
 PAKET: ${paketSatir}
 
 AKIS KURALLARI:
-• OLUSTUR: Hizmeti hizmet_ara ile bul (BIR KEZ cagir; donen SECILEN salonHizmetId'yi kullan,
-  benzer isimler icin musteriye "hangisi" diye SORMA). Tarih+saat al (personel opsiyonel).
-  -> uygun_randevu_bul(salonHizmetId, tarihSaat) -> Musteriye OZET ver
-  ("<gun> <tarih> saat <saat> <hizmet> icin randevunuzu olusturuyorum, onayliyor musunuz?")
-  -> "evet" -> randevu_olustur. Hizmet bulunamazsa "maalesef veremiyoruz" deyip baska hizmet iste.
+• OLUSTUR: Musterinin cumlesinden HIZMET, TARIH, SAAT'ten hangileri varsa AL (biri, ikisi veya
+  ucu birden ayni cumlede olabilir; "cuma ogleden sonra sac kesimi" gibi). EKSIK olanlari SIRAYLA
+  ve TEK TEK sor, zaten soyleneni TEKRAR SORMA:
+    1) HIZMET yoksa: "Hangi hizmet için randevu istiyorsunuz?"
+    2) TARIH yoksa: "Hangi güne randevu istiyorsunuz?"
+    3) SAAT yoksa: "Saat kaçta olsun?"
+  Hizmet adi elde olunca hizmet_ara (BIR KEZ; donen SECILEN salonHizmetId'yi kullan, benzer
+  isimlere "hangisi" diye SORMA).
+  - Hizmet+tarih+saat tamam -> uygun_randevu_bul(salonHizmetId, tarihSaat) -> Musteriye OZET:
+    "<gun> <tarih> saat <saat> <hizmet> için randevunuzu oluşturuyorum, onaylıyor musunuz?"
+  - "evet" -> randevu_olustur. Hizmet bulunamazsa "maalesef bu hizmeti veremiyoruz" deyip baska hizmet iste.
 • PAKETTEN OLUSTUR: paket varsa ve musteri kabul ederse hizmet/personel SORMA; sadece tarih+saat al.
   -> uygun_randevu_bul(paketten=true) -> ONAY -> randevu_olustur(paketten=true).
 • GUNCELLE (erteleme): Birden fazla randevu varsa hangisini belirle (musteri "birinci/ikinci/sonuncu"
