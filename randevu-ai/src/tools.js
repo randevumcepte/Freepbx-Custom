@@ -101,9 +101,10 @@ function hizmetAra(input, ctx) {
     }
     return { h, score };
   }).filter(x => x.score >= 45).sort((a, b) => b.score - a.score).slice(0, 5);
-  if (!scored.length) return { toModel: `"${input.metin}" icin eslesen hizmet yok. Musteriye kibarca veremedigimizi soyle veya farkli ifade iste.` };
-  const list = scored.map(x => `salonHizmetId=${x.h.salonHizmetId} "${x.h.ad}"`).join(' | ');
-  return { toModel: `Adaylar: ${list}. En uygun olani sec; birden fazla yakinsa musteriye dogrula.` };
+  if (!scored.length) return { toModel: `ESLESME YOK. Musteriye "maalesef bu hizmeti veremiyoruz" de ve baska bir hizmet isteyip istemedigini sor.` };
+  const top = scored[0];
+  const others = scored.slice(1).map(x => `${x.h.salonHizmetId}:"${x.h.ad}"`).join(', ');
+  return { toModel: `SECILEN hizmet: salonHizmetId=${top.h.salonHizmetId} "${top.h.ad}". Bunu KULLAN; benzer isimler icin musteriye "hangisi" diye SORMA. Simdi tarih-saat ile uygun_randevu_bul cagir.${others ? ' (bilgi, digerleri: ' + others + ')' : ''}` };
 }
 
 // ── uygun_randevu_bul ────────────────────────────────────────────────────────
@@ -161,9 +162,18 @@ async function uygunRandevuBul(input, ctx) {
     alternatif: !!data.alternatifOneri, paketten,
   };
   ctx.lastAvailability.set('slot', slot);
+  // Ozet icin personel adini coz (hizmetin personeller listesinden)
+  let personelAd = null;
+  if (slot.personelId && hizmet) {
+    const p = (hizmet.personeller || []).find(pp => Number(pp.id) === Number(slot.personelId));
+    if (p) personelAd = p.ad;
+  }
+  const ozetNot = slot.alternatif
+    ? 'Istenen saat dolu; en yakin uygun bu. Musteriye tarih-saat-hizmet(-personel) OZETINI ver ve onay iste, sonra randevu_olustur.'
+    : 'Uygun. Musteriye tarih-saat-hizmet(-personel) OZETINI ver ve onay iste, sonra randevu_olustur.';
   return { toModel: JSON.stringify({
     uygunTarihSaat: slot.tarihSaat, alternatifOneri: slot.alternatif,
-    not: slot.alternatif ? 'Istenen saat dolu; en yakin uygun bu. Musteriye SOYLE ve onay iste.' : 'Uygun. Kisa onay iste.',
+    hizmetAdi: hizmet ? hizmet.ad : null, personel: personelAd, not: ozetNot,
   }) };
 }
 
