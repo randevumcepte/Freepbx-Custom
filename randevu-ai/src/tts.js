@@ -37,7 +37,11 @@ function speak(text, callId) {
   return new Promise((resolve, reject) => {
     if (config.tts.engine === 'edge') {
       // Edge-TTS (ucretsiz) -> mp3, sonra Asterisk icin 8kHz mono wav (ffmpeg gerekli).
-      run('edge-tts', ['--voice', config.tts.edgeVoice, '--text', text, '--write-media', `${base}.mp3`], (err) => {
+      // rate/pitch ile duz sesi biraz canlandir (Edge Turkce'de emotion "style" yok, sadece bunlar).
+      const edgeArgs = ['--voice', config.tts.edgeVoice, '--text', text, '--write-media', `${base}.mp3`];
+      if (config.tts.edgeRate) edgeArgs.push('--rate', config.tts.edgeRate);
+      if (config.tts.edgePitch) edgeArgs.push('--pitch', config.tts.edgePitch);
+      run('edge-tts', edgeArgs, (err) => {
         if (err) return reject(err);
         run('ffmpeg', ['-y', '-loglevel', 'error', '-i', `${base}.mp3`, '-ar', '8000', '-ac', '1', `${base}.wav`],
           (e2) => e2 ? reject(e2) : resolve(`sound:${base}`));

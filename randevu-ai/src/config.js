@@ -65,6 +65,9 @@ module.exports = {
     engine: process.env.TTS_ENGINE || 'edge', // edge (UCRETSIZ) | piper (ucretsiz offline) | polly (ucretli)
     outDir: process.env.TTS_OUT_DIR || '/var/spool/asterisk/monitor',
     edgeVoice: process.env.EDGE_TTS_VOICE || 'tr-TR-EmelNeural', // veya tr-TR-AhmetNeural
+    // Duz/robot hissini azaltmak icin: hafif hizlandir + ton ver. Ornek: rate=+8%, pitch=+3Hz.
+    edgeRate: process.env.EDGE_TTS_RATE || '+8%',
+    edgePitch: process.env.EDGE_TTS_PITCH || '+2Hz',
     piperModel: process.env.PIPER_MODEL || '/opt/piper/tr_TR-model.onnx',
   },
   timezone: 'Europe/Istanbul',
