@@ -22,20 +22,32 @@ class GroqEngine {
 
     for (let guard = 0; guard < 8; guard++) {
       const t0 = Date.now();
-      const { data } = await axios.post(
-        `${config.groq.url}/chat/completions`,
-        {
-          model: config.groq.model,
-          messages: this.messages,
-          tools: this.toolsOpenAI,
-          tool_choice: 'auto',
-          temperature: 0.2,
-        },
-        {
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.groq.apiKey}` },
-          timeout: 30000,
-        }
-      );
+      let data;
+      try {
+        ({ data } = await axios.post(
+          `${config.groq.url}/chat/completions`,
+          {
+            model: config.groq.model,
+            messages: this.messages,
+            tools: this.toolsOpenAI,
+            tool_choice: 'auto',
+            temperature: 0.2,
+          },
+          {
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.groq.apiKey}` },
+            timeout: 30000,
+          }
+        ));
+      } catch (err) {
+        // Groq API hatasi (400 bozuk tool-call / 429 rate-limit / ag). ESKIDEN throw edip cagriyi
+        // "direk kapatiyordu"; simdi GORUNUR log + zarif kapanis (operatore).
+        const st = err.response && err.response.status;
+        const body = err.response && err.response.data;
+        console.error(`[groq] API HATASI status=${st} body=${JSON.stringify(body).slice(0, 500)} (${err.message})`);
+        const kapanis = 'Şu an sizi operatöre aktarıyorum, lütfen hatta kalın.';
+        speakAll(kapanis, onSentence);
+        return { text: kapanis, control: 'transfer' };
+      }
 
       const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
       const calls = msg.tool_calls || [];
