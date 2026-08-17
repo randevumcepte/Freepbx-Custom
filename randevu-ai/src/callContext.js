@@ -48,10 +48,17 @@ async function loadCallContext(callerId, did) {
   }));
 
   // Paket (bekleyen seans) — varsa paketten randevu teklif edilir.
+  // ÖNEMLI: randevuUygunlukKontrolEt/santralRandevuEkle paketBilgi'yi API'nin dondurdugu SEKILDE
+  // bekliyor (salonId + hizmetler[].hizmet_id ZORUNLU). O yuzden ham data.paket'i OLDUGU GIBI koru;
+  // eksik alanlari (salonId) kirpma -> yoksa Laravel'de $paketBilgisi['salonId'] null olup 500 verir.
   const paket = data.paket ? {
+    ...data.paket,
     paketAdi: data.paket.paketAdi ?? data.paket.paket_adi,
     bekleyenSeans: data.paket.bekleyenSeans ?? data.paket.bekleyen_seans,
-    salonHizmetId: data.paket.salonHizmetId ?? data.paket.salon_hizmet_id,
+    salonId: data.paket.salonId ?? data.paket.salon_id,
+    salonHizmetId: data.paket.salonHizmetId ?? data.paket.salon_hizmet_id
+      ?? (Array.isArray(data.paket.hizmetler) && data.paket.hizmetler[0]
+          && (data.paket.hizmetler[0].hizmet_id ?? data.paket.hizmetler[0].salon_hizmet_id)),
     personeller: data.paket.personeller || [],
     hizmetler: data.paket.hizmetler || [],
   } : null;
