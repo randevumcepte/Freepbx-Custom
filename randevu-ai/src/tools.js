@@ -17,11 +17,11 @@ const SPECS = [
     schema: {
       type: 'object',
       properties: {
-        salonHizmetId: { type: 'integer', description: 'YENI randevu: hizmet listesinden secilen id (paketten/guncelleme ise bos birak)' },
+        salonHizmetId: { type: ['integer', 'string'], description: 'YENI randevu: hizmet listesinden secilen id (paketten/guncelleme ise bos birak)' },
         tarihSaat: { type: 'string', description: 'Istenen tarih-saat, "YYYY-MM-DD HH:mm" (Turkiye saati)' },
-        personelId: { type: 'integer', description: 'Musteri personel belirttiyse id; farketmez ise verme' },
-        paketten: { type: 'boolean', description: 'Musterinin paketinden yeni randevu ise true' },
-        randevuId: { type: 'integer', description: 'GUNCELLEME (erteleme) ise mevcut randevunun id\'si; yeni olusturmada verme' },
+        personelId: { type: ['integer', 'string'], description: 'Musteri personel belirttiyse id; farketmez ise verme' },
+        paketten: { type: ['boolean', 'string'], description: 'Musterinin paketinden yeni randevu ise true' },
+        randevuId: { type: ['integer', 'string'], description: 'GUNCELLEME (erteleme) ise mevcut randevunun id\'si; yeni olusturmada verme' },
       },
       required: ['tarihSaat'],
     },
@@ -32,9 +32,9 @@ const SPECS = [
     schema: {
       type: 'object',
       properties: {
-        salonHizmetId: { type: 'integer' },
+        salonHizmetId: { type: ['integer', 'string'] },
         tarihSaat: { type: 'string', description: 'Onaylanan uygun slot, "YYYY-MM-DD HH:mm"' },
-        paketten: { type: 'boolean', description: 'Paketten randevu ise true' },
+        paketten: { type: ['boolean', 'string'], description: 'Paketten randevu ise true' },
       },
       required: ['tarihSaat'],
     },
@@ -45,7 +45,7 @@ const SPECS = [
     schema: {
       type: 'object',
       properties: {
-        randevuId: { type: 'integer', description: 'Guncellenecek randevunun id\'si (uygun_randevu_bul\'daki ile ayni)' },
+        randevuId: { type: ['integer', 'string'], description: 'Guncellenecek randevunun id\'si (uygun_randevu_bul\'daki ile ayni)' },
       },
       required: ['randevuId'],
     },
@@ -55,7 +55,7 @@ const SPECS = [
     description: 'Mevcut bir randevuyu iptal eder. randevuId mevcut randevular listesinden secilir. Once musteriden ONAY al.',
     schema: {
       type: 'object',
-      properties: { randevuId: { type: 'integer', description: 'Iptal edilecek randevunun id\'si' } },
+      properties: { randevuId: { type: ['integer', 'string'], description: 'Iptal edilecek randevunun id\'si' } },
       required: ['randevuId'],
     },
   },
@@ -76,6 +76,11 @@ function splitTarihSaat(ts) {
   const [d, t = '00:00'] = String(ts).trim().split(/[ T]/);
   return { tarih: d, saat: t.length === 5 ? `${t}:00` : t };
 }
+
+// qwen gibi modeller tool argumanlarini bazen string uretir ("True", "15"). Groq semayi KATI
+// dogruladigi icin 400 verir; sema union tip + burada guvenli cevirim ile ikisini de karsilariz.
+function toBool(v) { return v === true || v === 1 || /^(true|1|evet|yes|paketten)$/i.test(String(v == null ? '' : v).trim()); }
+function toInt(v) { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? Math.trunc(n) : null; }
 
 function turkceNorm(s) {
   return String(s || '').toLowerCase()
@@ -111,18 +116,19 @@ function hizmetAra(input, ctx) {
 async function uygunRandevuBul(input, ctx) {
   // GUNCELLEME (reschedule): randevuId ile; backend hizmeti randevudan turetir ve mevcut
   // randevuyu cakismadan haric tutar. hizmet/personel gerekmez (menu akisiyla birebir).
-  const reschedule = input.randevuId != null && input.randevuId !== '';
+  const rId = toInt(input.randevuId);
+  const reschedule = rId != null;
   if (reschedule) {
     if (ctx.stub) {
-      ctx.lastAvailability.set('slot', { tarihSaat: input.tarihSaat, alternatif: false, randevuId: input.randevuId });
+      ctx.lastAvailability.set('slot', { tarihSaat: input.tarihSaat, alternatif: false, randevuId: rId });
       return { toModel: JSON.stringify({ uygunTarihSaat: input.tarihSaat, alternatifOneri: false, not: '(STUB) uygun. Onay iste, sonra randevu_guncelle.' }) };
     }
     const { data } = await axios.post(`${config.api.base}/api/v1/randevuUygunlukKontrolEt`, {
       salonHizmetId: null, salonId: ctx.salonId, tarihSaat: input.tarihSaat,
-      personelId: null, paketBilgi: null, randevuId: input.randevuId,
+      personelId: null, paketBilgi: null, randevuId: rId,
     }, { headers: { 'Content-Type': 'application/json' }, timeout: 15000 });
     if (!data || !data.success) return { toModel: 'Bu tarih icin uygun degil. Musteriden baska bir tarih iste.', isError: true };
-    const slot = { tarihSaat: data.tarihsaat || input.tarihSaat, alternatif: !!data.alternatifOneri, randevuId: input.randevuId };
+    const slot = { tarihSaat: data.tarihsaat || input.tarihSaat, alternatif: !!data.alternatifOneri, randevuId: rId };
     ctx.lastAvailability.set('slot', slot);
     return { toModel: JSON.stringify({
       uygunTarihSaat: slot.tarihSaat, alternatifOneri: slot.alternatif,
@@ -130,8 +136,8 @@ async function uygunRandevuBul(input, ctx) {
     }) };
   }
 
-  const paketten = !!input.paketten && ctx.paket;
-  let salonHizmetId = input.salonHizmetId;
+  const paketten = toBool(input.paketten) && ctx.paket;
+  let salonHizmetId = toInt(input.salonHizmetId);
   let hizmet = null;
   if (paketten) {
     salonHizmetId = ctx.paket.salonHizmetId ?? salonHizmetId ?? (ctx.paket.hizmetler && ctx.paket.hizmetler[0] && (ctx.paket.hizmetler[0].salon_hizmet_id ?? ctx.paket.hizmetler[0].hizmet_id));
@@ -141,7 +147,7 @@ async function uygunRandevuBul(input, ctx) {
   }
 
   if (ctx.stub) {
-    const slot = { salonHizmetId, tarihSaat: input.tarihSaat, personelId: input.personelId ?? 101, odaId: 7,
+    const slot = { salonHizmetId, tarihSaat: input.tarihSaat, personelId: toInt(input.personelId) ?? 101, odaId: 7,
       sureDk: hizmet ? hizmet.sureDk : 60, fiyat: hizmet ? hizmet.fiyat : 0, alternatif: false, paketten };
     ctx.lastAvailability.set('slot', slot);
     return { toModel: JSON.stringify({ uygunTarihSaat: slot.tarihSaat, alternatifOneri: false, not: '(STUB) uygun. Kisa onay iste.' }) };
@@ -150,14 +156,14 @@ async function uygunRandevuBul(input, ctx) {
   console.error(`[uygun_randevu_bul] salonHizmetId=${salonHizmetId} salonId=${ctx.salonId} tarihSaat=${input.tarihSaat} paketten=${paketten}`);
   const { data } = await axios.post(`${config.api.base}/api/v1/randevuUygunlukKontrolEt`, {
     salonHizmetId, salonId: ctx.salonId, tarihSaat: input.tarihSaat,
-    personelId: input.personelId ?? null, paketBilgi: paketten ? ctx.paket : null,
+    personelId: toInt(input.personelId), paketBilgi: paketten ? ctx.paket : null,
   }, { headers: { 'Content-Type': 'application/json' }, timeout: 15000 });
 
   if (!data || !data.success) return { toModel: 'Backend uygun randevu bulamadi. Musteriden baska bir tarih iste.', isError: true };
 
   const slot = {
     salonHizmetId, tarihSaat: data.tarihsaat || input.tarihSaat,
-    personelId: data.personelid ?? input.personelId ?? null,
+    personelId: data.personelid ?? toInt(input.personelId) ?? null,
     odaId: (data.odaid === '' || data.odaid == null) ? null : data.odaid,
     sureDk: hizmet ? hizmet.sureDk : null, fiyat: hizmet ? hizmet.fiyat : null,
     alternatif: !!data.alternatifOneri, paketten,
@@ -183,7 +189,7 @@ async function randevuOlustur(input, ctx) {
   const slot = ctx.lastAvailability.get('slot');
   if (!slot) return { toModel: 'Once uygun_randevu_bul cagirmalisin (dogrulanmis slot yok).', isError: true };
   const { tarih, saat } = splitTarihSaat(slot.tarihSaat);
-  const paketten = !!input.paketten || slot.paketten;
+  const paketten = toBool(input.paketten) || slot.paketten;
 
   if (ctx.stub) {
     return { toModel: `(STUB) Randevu olusturuldu: ${tarih} ${saat}${paketten ? ' (paketten)' : ''}, personel #${slot.personelId}, oda #${slot.odaId}. Teyit et ve arama_kapat cagir.` };
@@ -225,7 +231,7 @@ async function randevuGuncelle(input, ctx) {
   const { tarih, saat } = splitTarihSaat(slot.tarihSaat);
   if (ctx.stub) return { toModel: `(STUB) Randevu #${input.randevuId} guncellendi -> ${tarih} ${saat}. Teyit et ve arama_kapat cagir.` };
   const { data } = await axios.post(`${config.api.base}/api/v1/randevuyuenyakintariheguncelle`, {
-    randevuid: input.randevuId, randevutarihi: tarih, randevusaati: saat,
+    randevuid: slot.randevuId ?? toInt(input.randevuId), randevutarihi: tarih, randevusaati: saat,
   }, { headers: { 'Content-Type': 'application/json' }, timeout: 15000 });
   if (!data) return { toModel: 'Guncelleme basarisiz. Operatore aktar.', isError: true };
   return { toModel: `Randevu ${tarih} ${saat} olarak guncellendi. Musteriye teyit et ve arama_kapat cagir.` };
@@ -234,7 +240,7 @@ async function randevuGuncelle(input, ctx) {
 // ── randevu_iptal ────────────────────────────────────────────────────────────
 async function randevuIptal(input, ctx) {
   if (ctx.stub) return { toModel: `(STUB) Randevu #${input.randevuId} iptal edildi. Teyit et ve arama_kapat cagir.` };
-  const { data } = await axios.post(`${config.api.base}/api/v1/asistanRandevuIptalEt`, { randevuid: input.randevuId }, { headers: { 'Content-Type': 'application/json' }, timeout: 15000 });
+  const { data } = await axios.post(`${config.api.base}/api/v1/asistanRandevuIptalEt`, { randevuid: toInt(input.randevuId) }, { headers: { 'Content-Type': 'application/json' }, timeout: 15000 });
   if (!data || data.success === false) return { toModel: 'Iptal basarisiz. Operatore aktar.', isError: true };
   return { toModel: 'Randevu iptal edildi. Musteriye teyit et ve arama_kapat cagir.' };
 }
