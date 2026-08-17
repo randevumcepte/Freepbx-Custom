@@ -1,5 +1,7 @@
 'use strict';
-require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
+// override:true -> .env DAIMA kazanir. (pm2 eski env'i process'e pinliyor; dotenv normalde
+// zaten var olan degiskeni ezmez -> eski GROQ_API_KEY/model takili kalip 404 verebiliyordu.)
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), override: true });
 
 // Turkiye saati — LLM'e "bugun" referansini dogru vermek icin tek kaynak.
 // (Eski sistemde node cocuk surecine TZ gecilmedigi icin gece gun kaymasi oluyordu;
