@@ -5,6 +5,16 @@ const config = require('./../config');
 // bolersek aralara sessizlik/bekleme giriyor). onSentence'a butun yaniti bir kez veriyoruz.
 function speakAll(text, onSentence) { const t = String(text || '').trim(); if (t && onSentence) onSentence(t); }
 
+// Reasoning modelleri (qwen3, gpt-oss) düşünmeyi content icine <think>...</think> olarak
+// koyabiliyor. Sesli okumadan ONCE temizle (yoksa asistan dusunme metnini okur).
+function cleanText(t) {
+  return String(t || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\/?think>/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // UCRETSIZ + COK HIZLI beyin: Groq (bulut LPU, OpenAI-uyumlu + tool-calling).
 // Ollama ile fark: yanit data.choices[0].message; tool_calls.function.arguments STRING (JSON);
 // tool sonucu mesaji tool_call_id ister. STT/TTS santralde kalir; sadece metin buluta gider.
@@ -53,8 +63,9 @@ class GroqEngine {
       const calls = msg.tool_calls || [];
       console.error(`[groq] tur ${guard}: ${Date.now() - t0}ms, tool=${calls.length}, text="${(msg.content || '').slice(0, 60)}"`);
 
-      // Asistan mesajini oldugu gibi ekle (tool_calls dahil, OpenAI formati)
-      this.messages.push({ role: 'assistant', content: msg.content || '', ...(calls.length ? { tool_calls: calls } : {}) });
+      // Asistan mesajini ekle (tool_calls dahil, OpenAI formati). content'ten <think> temizle
+      // (reasoning modellerinde gecmiste birikmesin/kafa karistirmasin).
+      this.messages.push({ role: 'assistant', content: cleanText(msg.content), ...(calls.length ? { tool_calls: calls } : {}) });
 
       if (calls.length) {
         for (const call of calls) {
@@ -74,7 +85,7 @@ class GroqEngine {
         continue; // model tool sonuclariyla devam etsin
       }
 
-      const text = (msg.content || '').trim();
+      const text = cleanText(msg.content);
       speakAll(text, onSentence);
       return { text, control: this.ctx.control };
     }
