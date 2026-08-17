@@ -15,6 +15,17 @@ function cleanText(t) {
     .trim();
 }
 
+// TPM (token/dk) sinirini asmamak icin gecmisi kis: sistem mesaji + son N mesaj.
+// Onemli durum (secilen hizmet/slot) ctx.lastAvailability'de tutuluyor, gecmiste degil.
+// Pencere basi 'tool' mesajiyla baslamamali (OpenAI: tool, kendisini doguran assistant'i ister).
+function trimMessages(messages, keep = 10) {
+  if (messages.length <= keep + 1) return messages;
+  const system = messages[0];
+  const tail = messages.slice(-keep);
+  while (tail.length && tail[0].role === 'tool') tail.shift();
+  return [system, ...tail];
+}
+
 // UCRETSIZ + COK HIZLI beyin: Groq (bulut LPU, OpenAI-uyumlu + tool-calling).
 // Ollama ile fark: yanit data.choices[0].message; tool_calls.function.arguments STRING (JSON);
 // tool sonucu mesaji tool_call_id ister. STT/TTS santralde kalir; sadece metin buluta gider.
@@ -38,7 +49,7 @@ class GroqEngine {
           `${config.groq.url}/chat/completions`,
           {
             model: config.groq.model,
-            messages: this.messages,
+            messages: trimMessages(this.messages),
             tools: this.toolsOpenAI,
             tool_choice: 'auto',
             temperature: 0.2,
