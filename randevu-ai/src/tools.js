@@ -8,60 +8,58 @@ const config = require('./config');
 const SPECS = [
   {
     name: 'hizmet_ara',
-    description: 'Musterinin soyledigi hizmet adini salonun hizmet katalogunda arar, en yakin adaylari (salonHizmetId + ad) doner. Randevu OLUSTURMAK icin hizmeti bulmak uzere ONCE bunu cagir.',
-    schema: { type: 'object', properties: { metin: { type: 'string', description: 'Musterinin soyledigi hizmet ifadesi' } }, required: ['metin'] },
+    description: 'Soylenen hizmet adini katalogda arar, salonHizmetId doner. Hizmeti bulmak icin once bunu cagir.',
+    schema: { type: 'object', properties: { metin: { type: 'string', description: 'Sadece hizmet adi' } }, required: ['metin'] },
   },
   {
     name: 'uygun_randevu_bul',
-    description: 'Verilen tarih-saat icin uygun slotu backend\'den sorar. YENI randevuda randevu_olustur\'dan, GUNCELLEMEde randevu_guncelle\'den ONCE cagrilir. Guncelleme ise randevuId ver (hizmet/personel gerekmez).',
+    description: 'Tarih-saat icin uygunlugu sorar. randevu_olustur/guncelle ONCESI cagir. Guncelleme ise randevuId ver.',
     schema: {
       type: 'object',
       properties: {
-        salonHizmetId: { type: ['integer', 'string'], description: 'YENI randevu: hizmet listesinden secilen id (paketten/guncelleme ise bos birak)' },
-        tarihSaat: { type: 'string', description: 'Istenen tarih-saat, "YYYY-MM-DD HH:mm" (Turkiye saati)' },
-        personelId: { type: ['integer', 'string'], description: 'Musteri personel belirttiyse id; farketmez ise verme' },
-        paketten: { type: ['boolean', 'string'], description: 'Musterinin paketinden yeni randevu ise true' },
-        randevuId: { type: ['integer', 'string'], description: 'GUNCELLEME (erteleme) ise mevcut randevunun id\'si; yeni olusturmada verme' },
+        salonHizmetId: { type: ['integer', 'string'], description: 'Yeni randevu hizmet id (paket/guncelleme ise bos)' },
+        tarihSaat: { type: 'string', description: '"YYYY-MM-DD HH:mm"' },
+        personelId: { type: ['integer', 'string'], description: 'Personel belirtildiyse id' },
+        paketten: { type: ['boolean', 'string'], description: 'Paketten ise true' },
+        randevuId: { type: ['integer', 'string'], description: 'Guncelleme ise mevcut randevu id' },
       },
       required: ['tarihSaat'],
     },
   },
   {
     name: 'randevu_olustur',
-    description: 'Musteri ONAYLADIKTAN sonra randevuyu olusturur. Yalnizca uygun_randevu_bul ile dogrulanmis tarih icin. oda/personel backend yanitindan otomatik alinir.',
+    description: 'Onaydan sonra randevuyu olusturur. Sadece uygun_randevu_bul ile dogrulanmis tarih icin.',
     schema: {
       type: 'object',
       properties: {
         salonHizmetId: { type: ['integer', 'string'] },
-        tarihSaat: { type: 'string', description: 'Onaylanan uygun slot, "YYYY-MM-DD HH:mm"' },
-        paketten: { type: ['boolean', 'string'], description: 'Paketten randevu ise true' },
+        tarihSaat: { type: 'string', description: '"YYYY-MM-DD HH:mm"' },
+        paketten: { type: ['boolean', 'string'], description: 'Paketten ise true' },
       },
       required: ['tarihSaat'],
     },
   },
   {
     name: 'randevu_guncelle',
-    description: 'Randevuyu, uygun_randevu_bul(randevuId=...) ile dogrulanip ONAYLANAN yeni slota gunceller. Once uygun_randevu_bul(randevuId=...) cagirilmis ve onay alinmis olmalidir.',
+    description: 'uygun_randevu_bul(randevuId) ile dogrulanip onaylanan yeni tarihe gunceller.',
     schema: {
       type: 'object',
-      properties: {
-        randevuId: { type: ['integer', 'string'], description: 'Guncellenecek randevunun id\'si (uygun_randevu_bul\'daki ile ayni)' },
-      },
+      properties: { randevuId: { type: ['integer', 'string'], description: 'Guncellenecek randevu id' } },
       required: ['randevuId'],
     },
   },
   {
     name: 'randevu_iptal',
-    description: 'Mevcut bir randevuyu iptal eder. randevuId mevcut randevular listesinden secilir. Once musteriden ONAY al.',
+    description: 'Randevuyu iptal eder. Once onay al.',
     schema: {
       type: 'object',
-      properties: { randevuId: { type: ['integer', 'string'], description: 'Iptal edilecek randevunun id\'si' } },
+      properties: { randevuId: { type: ['integer', 'string'], description: 'Iptal edilecek randevu id' } },
       required: ['randevuId'],
     },
   },
-  { name: 'operatore_aktar', description: 'Gorusmeyi canli operatore/isletmeye aktarir (anlasilamama, musteri talebi, hata, sinirli musteri).',
+  { name: 'operatore_aktar', description: 'Gorusmeyi operatore aktarir (anlasilamama/talep/hata/sinir).',
     schema: { type: 'object', properties: { sebep: { type: 'string' } } } },
-  { name: 'arama_kapat', description: 'Islem bitince (randevu olustu/guncellendi/iptal edildi ya da musteri vazgecti) gorusmeyi kibarca sonlandirir.',
+  { name: 'arama_kapat', description: 'Islem bitince gorusmeyi kibarca kapatir.',
     schema: { type: 'object', properties: { sebep: { type: 'string' } } } },
 ];
 
@@ -106,10 +104,9 @@ function hizmetAra(input, ctx) {
     }
     return { h, score };
   }).filter(x => x.score >= 45).sort((a, b) => b.score - a.score).slice(0, 5);
-  if (!scored.length) return { toModel: `ESLESME YOK. Musteriye "maalesef bu hizmeti veremiyoruz" de ve baska bir hizmet isteyip istemedigini sor.` };
+  if (!scored.length) return { toModel: `ESLESME YOK. "maalesef bu hizmeti veremiyoruz" de, baska hizmet sor.` };
   const top = scored[0];
-  const others = scored.slice(1).map(x => `${x.h.salonHizmetId}:"${x.h.ad}"`).join(', ');
-  return { toModel: `SECILEN hizmet: salonHizmetId=${top.h.salonHizmetId} "${top.h.ad}". Bunu KULLAN; benzer isimler icin musteriye "hangisi" diye SORMA. Simdi tarih-saat ile uygun_randevu_bul cagir.${others ? ' (bilgi, digerleri: ' + others + ')' : ''}` };
+  return { toModel: `salonHizmetId=${top.h.salonHizmetId} "${top.h.ad}". Bunu kullan, "hangisi" diye sorma; tarih-saat ile uygun_randevu_bul cagir.` };
 }
 
 // ── uygun_randevu_bul ────────────────────────────────────────────────────────
@@ -176,8 +173,8 @@ async function uygunRandevuBul(input, ctx) {
     if (p) personelAd = p.ad;
   }
   const ozetNot = slot.alternatif
-    ? 'Istenen saat dolu; en yakin uygun bu. Musteriye tarih-saat-hizmet(-personel) OZETINI ver ve onay iste, sonra randevu_olustur.'
-    : 'Uygun. Musteriye tarih-saat-hizmet(-personel) OZETINI ver ve onay iste, sonra randevu_olustur.';
+    ? 'Istenen saat dolu, en yakin uygun bu. Ozet ver, onay al, sonra randevu_olustur.'
+    : 'Uygun. Ozet ver, onay al, sonra randevu_olustur.';
   return { toModel: JSON.stringify({
     uygunTarihSaat: slot.tarihSaat, alternatifOneri: slot.alternatif,
     hizmetAdi: hizmet ? hizmet.ad : null, personel: personelAd, not: ozetNot,
