@@ -136,6 +136,41 @@ if (!empty($_GET['debug'])) {
         $s->execute([':p'=>'%'.$last10]);
         $out['E_tarih_araligi'] = $s->fetch(PDO::FETCH_ASSOC);
 
+        // 6) Bilinen 27 cagrinin HAM ornekleri — trunk kanal adini gormek icin.
+        $s = $pdo->prepare("SELECT calldate, src, dst, channel, dstchannel, dcontext, lastapp, billsec
+                            FROM cdr
+                            WHERE outbound_cnum = :did AND disposition='ANSWERED'
+                            ORDER BY calldate DESC LIMIT 5");
+        $s->execute([':did'=>$did]);
+        $out['F_ornek_satirlar'] = $s->fetchAll(PDO::FETCH_ASSOC);
+
+        // 7) Bilinen cagrilardan trunk kanal onekleri (PJSIP/<trunk>-...).
+        $s = $pdo->prepare("SELECT SUBSTRING_INDEX(dstchannel,'-',1) tch, COUNT(*) a, COALESCE(SUM(billsec),0) b
+                            FROM cdr
+                            WHERE outbound_cnum = :did AND disposition='ANSWERED' AND dstchannel <> ''
+                            GROUP BY tch ORDER BY a DESC");
+        $s->execute([':did'=>$did]);
+        $prefixler = $s->fetchAll(PDO::FETCH_ASSOC);
+        $out['G_trunk_kanal_onekleri'] = $prefixler;
+
+        // 8) Her trunk onegi icin TUM ZAMAN toplam (dstchannel bazli = hat bazli).
+        //    Ana sistemdeki 492 dk ile hangisi tutuyor buradan gorulur.
+        $out['H_trunk_kanal_bazli_tumzaman'] = [];
+        foreach ($prefixler as $p) {
+            $tch = $p['tch'];
+            if ($tch === '' || strpos($tch, 'PJSIP/') !== 0) continue;
+            $s = $pdo->prepare("SELECT COUNT(*) a, COALESCE(SUM(billsec),0) b FROM cdr
+                                WHERE dstchannel LIKE :pref AND disposition='ANSWERED'");
+            $s->execute([':pref'=>$tch.'-%']);
+            $r = $s->fetch(PDO::FETCH_ASSOC);
+            $out['H_trunk_kanal_bazli_tumzaman'][] = [
+                'trunk_kanal' => $tch,
+                'adet'        => (int)$r['a'],
+                'dakika'      => round($r['b']/60,1),
+                'saniye'      => (int)$r['b'],
+            ];
+        }
+
     } catch (PDOException $e) {
         $out['error'] = $e->getMessage();
     }
