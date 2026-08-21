@@ -192,6 +192,35 @@ if (!empty($_GET['debug'])) {
         $r = $s->fetch(PDO::FETCH_ASSOC);
         $out['J_dahili34_tum_giden_dial'] = ['adet'=>(int)$r['a'],'dakika'=>round($r['b']/60,1),'saniye'=>(int)$r['b']];
 
+        // K) URETIM mantigi (dstchannel). satir vs benzersiz cagri (dedup kontrolu),
+        //    opsiyonel tarih penceresi (saglayici donemiyle kiyas), tarih araligi.
+        //    Kullanim: ...&debug=1&tarih1=2026-03-01&tarih2=2026-08-21
+        $kWhere  = "dstchannel LIKE :tp AND disposition='ANSWERED'";
+        $kParams = [':tp' => '%'.$did.'-%'];
+        if ($tarih1 && $tarih2) { $kWhere .= " AND calldate BETWEEN :kt1 AND :kt2"; $kParams[':kt1']=$tarih1; $kParams[':kt2']=$tarih2; }
+        $s = $pdo->prepare("SELECT COUNT(*) a,
+                                   COUNT(DISTINCT COALESCE(NULLIF(linkedid,''),uniqueid)) d,
+                                   COALESCE(SUM(billsec),0) b,
+                                   COALESCE(SUM(duration),0) dur,
+                                   SUM(CASE WHEN billsec=0 THEN 1 ELSE 0 END) sifir_bill,
+                                   SUM(CASE WHEN billsec BETWEEN 1 AND 3 THEN 1 ELSE 0 END) kisa_bill,
+                                   MIN(calldate) mn, MAX(calldate) mx
+                            FROM cdr WHERE $kWhere");
+        $s->execute($kParams);
+        $r = $s->fetch(PDO::FETCH_ASSOC);
+        $out['K_uretim_dstchannel'] = [
+            'tarih1'          => $tarih1, 'tarih2' => $tarih2,
+            'satir'           => (int)$r['a'],
+            'benzersiz_cagri' => (int)$r['d'],
+            'billsec_dakika'  => round($r['b']/60,1),
+            'billsec_saniye'  => (int)$r['b'],
+            'duration_dakika' => round($r['dur']/60,1),   // = konusma + calma; billsec ile fark = calma
+            'calma_farki_sn'  => (int)$r['dur'] - (int)$r['b'],
+            'billsec0_cevaplanan' => (int)$r['sifir_bill'], // cevaplandi ama 0sn = erken-cevap/anons olabilir
+            'kisa_1_3sn'      => (int)$r['kisa_bill'],       // 1-3sn: supheli erken-cevap
+            'ilk_cagri'       => $r['mn'], 'son_cagri' => $r['mx'],
+        ];
+
     } catch (PDOException $e) {
         $out['error'] = $e->getMessage();
     }
