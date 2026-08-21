@@ -79,8 +79,10 @@ if (empty($did) || !preg_match('/^\d+$/', (string)$did)) {
 // numarasi her zaman var ve her salonun numarasi benzersiz oldugundan
 // multi-tenant'ta da salonu temiz ayirir. Ayni satirda channel=PJSIP/<dahili>-
 // oldugu icin personel bazli olcum de tek satirdan cikar (EXISTS gerekmez).
-$where  = "t.dstchannel LIKE :trunkpat AND t.disposition = 'ANSWERED'";
-$params = [':trunkpat' => '%' . $did . '-%'];
+// Sabit onek (bastaki % YOK) -> dstchannel index'i kullanilabilir, CDR buyudukce
+// yavaslamaz. Dahili genelde PJSIP, trunk SIP; ikisini de kapsa.
+$where  = "(t.dstchannel LIKE :tp_sip OR t.dstchannel LIKE :tp_pjsip) AND t.disposition = 'ANSWERED'";
+$params = [':tp_sip' => 'SIP/' . $did . '-%', ':tp_pjsip' => 'PJSIP/' . $did . '-%'];
 
 if ($tarih1 && $tarih2) {
     $where .= " AND t.calldate BETWEEN :t1 AND :t2";
