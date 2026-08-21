@@ -84,6 +84,66 @@ if ($tarih1 && $tarih2) {
     $params[':t2'] = $tarih2;
 }
 
+// =====================================================================
+// DEBUG modu: ?debug=1 -> sapma teshisi. Farkli eslesme/tarih senaryolarini
+// yan yana dondurur ki "ana sistem" degeriyle hangisi tutuyor gorulsun.
+// (Bu blok normal ciktidan once calisip exit eder.)
+// =====================================================================
+if (!empty($_GET['debug'])) {
+    $last10 = substr(preg_replace('/\D/', '', (string)$did), -10);
+    $out = ['did' => $did, 'last10' => $last10];
+
+    try {
+        // 1) Mevcut mantik: outbound_cnum = did TAM eslesme, TARIH PENCERELI.
+        if ($tarih1 && $tarih2) {
+            $s = $pdo->prepare("SELECT COUNT(*) a, COALESCE(SUM(billsec),0) b FROM cdr
+                                WHERE outbound_cnum = :did AND disposition='ANSWERED'
+                                  AND calldate BETWEEN :t1 AND :t2");
+            $s->execute([':did'=>$did, ':t1'=>$tarih1, ':t2'=>$tarih2]);
+            $r = $s->fetch(PDO::FETCH_ASSOC);
+            $out['A_pencereli_tam_eslesme'] = ['tarih1'=>$tarih1,'tarih2'=>$tarih2,'adet'=>(int)$r['a'],'dakika'=>round($r['b']/60,1),'saniye'=>(int)$r['b']];
+        } else {
+            $out['A_pencereli_tam_eslesme'] = 'tarih verilmedi (tum zaman)';
+        }
+
+        // 2) TUM ZAMAN, outbound_cnum = did TAM eslesme.
+        $s = $pdo->prepare("SELECT COUNT(*) a, COALESCE(SUM(billsec),0) b FROM cdr
+                            WHERE outbound_cnum = :did AND disposition='ANSWERED'");
+        $s->execute([':did'=>$did]);
+        $r = $s->fetch(PDO::FETCH_ASSOC);
+        $out['B_tumzaman_tam_eslesme'] = ['adet'=>(int)$r['a'],'dakika'=>round($r['b']/60,1),'saniye'=>(int)$r['b']];
+
+        // 3) TUM ZAMAN, outbound_cnum SON 10 HANE ile biter (format toleransli).
+        $s = $pdo->prepare("SELECT COUNT(*) a, COALESCE(SUM(billsec),0) b FROM cdr
+                            WHERE outbound_cnum LIKE :p AND disposition='ANSWERED'");
+        $s->execute([':p'=>'%'.$last10]);
+        $r = $s->fetch(PDO::FETCH_ASSOC);
+        $out['C_tumzaman_son10_like'] = ['pattern'=>'%'.$last10,'adet'=>(int)$r['a'],'dakika'=>round($r['b']/60,1),'saniye'=>(int)$r['b']];
+
+        // 4) CDR'da bu hatta ait GORULEN outbound_cnum formatlari (ilk 20).
+        $s = $pdo->prepare("SELECT outbound_cnum, COUNT(*) a, COALESCE(SUM(billsec),0) b
+                            FROM cdr
+                            WHERE outbound_cnum LIKE :p AND disposition='ANSWERED'
+                            GROUP BY outbound_cnum ORDER BY a DESC LIMIT 20");
+        $s->execute([':p'=>'%'.$last10]);
+        $out['D_gorulen_outbound_cnum_formatlari'] = array_map(function($x){
+            return ['outbound_cnum'=>$x['outbound_cnum'],'adet'=>(int)$x['a'],'dakika'=>round($x['b']/60,1)];
+        }, $s->fetchAll(PDO::FETCH_ASSOC));
+
+        // 5) Tarih araligi (son10 like uzerinden).
+        $s = $pdo->prepare("SELECT MIN(calldate) mn, MAX(calldate) mx FROM cdr
+                            WHERE outbound_cnum LIKE :p AND disposition='ANSWERED'");
+        $s->execute([':p'=>'%'.$last10]);
+        $out['E_tarih_araligi'] = $s->fetch(PDO::FETCH_ASSOC);
+
+    } catch (PDOException $e) {
+        $out['error'] = $e->getMessage();
+    }
+
+    echo json_encode($out, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 // Personel bazli: trunk leg'i, ayni cagrida (linkedid) o dahilinin
 // from-internal bacagi olan cagrilara daraltilir.
 if ($dahili !== null) {
