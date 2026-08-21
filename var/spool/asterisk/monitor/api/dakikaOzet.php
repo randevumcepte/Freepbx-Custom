@@ -7,10 +7,11 @@
 // cagriyi toplamaya uygun degil; burada sunucu tarafinda toplayip tek
 // deger donuyoruz.
 //
-// Olcum: outbound_cnum = <trunk/did> olan leg = trunk uzerinden disari
-// giden bacak. Bu bacagin billsec'i = operatorun faturaladigi gercek
-// konusma suresi. Cagri basina TEK trunk leg'i dustugu icin dedup
-// gerekmez; dogrudan SUM alinir.
+// Olcum: dstchannel = 'SIP/<numara>-out-...' olan leg = trunk uzerinden disari
+// giden cevaplanan bacak. Bu bacagin billsec'i = operatorun faturaladigi gercek
+// konusma suresi. outbound_cnum KULLANILMAZ (dahili/route kendi CID'ini yazip
+// cagrilarin cogunu kaciriyordu); trunk numarasi her zaman dstchannel'da olur.
+// Cagri basina TEK trunk leg'i dustugu icin dedup gerekmez; dogrudan SUM alinir.
 //
 // Cagri (GET):
 //   dakikaOzet.php?did=<trunk_no>&tarih1=YYYY-MM-DD&tarih2=YYYY-MM-DD&dahili=<no>
@@ -18,10 +19,8 @@
 //     tarih1  : opsiyonel baslangic (dahil, 00:00:00)
 //     tarih2  : opsiyonel bitis     (dahil, 23:59:59)
 //     dahili  : OPSIYONEL. Verilirse SADECE bu dahilinin baslattigi giden
-//               cagrilarin trunk-leg billsec'i toplanir (personel bazli gorunum).
-//               Trunk leg'inin src'si genelde trunk callerid'i oldugundan
-//               dahili, ayni linkedid altindaki from-internal bacaktan
-//               (channel = PJSIP/<dahili>-...) EXISTS ile eslesir.
+//               cagrilar sayilir (personel bazli gorunum). Ayni CDR satirinda
+//               channel = PJSIP/<dahili>-... oldugundan tek satirdan cikar.
 //
 // Yanit:
 //   { "did":"...", "giden_cevaplanan_adet":N, "toplam_billsec":S,
@@ -74,9 +73,14 @@ if (empty($did) || !preg_match('/^\d+$/', (string)$did)) {
     exit;
 }
 
-// t = trunk-out leg'i (billsec = gercek konusma). Alias, dahili EXISTS'i icin.
-$where  = "t.outbound_cnum = :did AND t.disposition = 'ANSWERED'";
-$params = [':did' => $did];
+// Giden cagri kimligi: TRUNK KANALI (dstchannel = SIP/<numara>-out-...).
+// outbound_cnum GUVENILMEZ: dahili/route kendi CID'ini yaziyor, cagrilarin cogu
+// numarayla eslesmiyordu (299 cagridan yalnizca 27'si). dstchannel'da ise trunk
+// numarasi her zaman var ve her salonun numarasi benzersiz oldugundan
+// multi-tenant'ta da salonu temiz ayirir. Ayni satirda channel=PJSIP/<dahili>-
+// oldugu icin personel bazli olcum de tek satirdan cikar (EXISTS gerekmez).
+$where  = "t.dstchannel LIKE :trunkpat AND t.disposition = 'ANSWERED'";
+$params = [':trunkpat' => '%' . $did . '-%'];
 
 if ($tarih1 && $tarih2) {
     $where .= " AND t.calldate BETWEEN :t1 AND :t2";
@@ -196,16 +200,11 @@ if (!empty($_GET['debug'])) {
     exit;
 }
 
-// Personel bazli: trunk leg'i, ayni cagrida (linkedid) o dahilinin
-// from-internal bacagi olan cagrilara daraltilir.
+// Personel bazli: cagriyi baslatan dahili leg'i ayni satirda (channel).
+// Dahili genelde PJSIP, trunk SIP oldugundan (PJSIP|SIP)/<dahili>- guvenli.
 if ($dahili !== null) {
-    $where .= " AND EXISTS (
-        SELECT 1 FROM cdr l
-        WHERE COALESCE(NULLIF(l.linkedid,''), l.uniqueid)
-            = COALESCE(NULLIF(t.linkedid,''), t.uniqueid)
-          AND l.channel REGEXP :dahiliRegex
-    )";
-    $params[':dahiliRegex'] = 'PJSIP/(' . $dahili . ')-';
+    $where .= " AND t.channel REGEXP :dahiliRegex";
+    $params[':dahiliRegex'] = '(PJSIP|SIP)/' . $dahili . '-';
 }
 
 try {
