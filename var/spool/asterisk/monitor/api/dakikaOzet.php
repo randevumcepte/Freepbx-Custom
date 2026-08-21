@@ -158,7 +158,7 @@ if (!empty($_GET['debug'])) {
         $out['H_trunk_kanal_bazli_tumzaman'] = [];
         foreach ($prefixler as $p) {
             $tch = $p['tch'];
-            if ($tch === '' || strpos($tch, 'PJSIP/') !== 0) continue;
+            if ($tch === '' || strpos($tch, '/') === false) continue; // SIP/ veya PJSIP/
             $s = $pdo->prepare("SELECT COUNT(*) a, COALESCE(SUM(billsec),0) b FROM cdr
                                 WHERE dstchannel LIKE :pref AND disposition='ANSWERED'");
             $s->execute([':pref'=>$tch.'-%']);
@@ -170,6 +170,23 @@ if (!empty($_GET['debug'])) {
                 'saniye'      => (int)$r['b'],
             ];
         }
+
+        // 9) Hattın numarasini iceren HER dstchannel (trunk adi degisse de yakalar),
+        //    cevaplanan tum zaman. En genis "hat bazli" olcum.
+        $s = $pdo->prepare("SELECT COUNT(*) a, COALESCE(SUM(billsec),0) b FROM cdr
+                            WHERE dstchannel LIKE :p AND disposition='ANSWERED'");
+        $s->execute([':p'=>'%'.$last10.'%']);
+        $r = $s->fetch(PDO::FETCH_ASSOC);
+        $out['I_dstchannel_numara_iceren_tumzaman'] = ['adet'=>(int)$r['a'],'dakika'=>round($r['b']/60,1),'saniye'=>(int)$r['b']];
+
+        // 10) Dahili 34 (ornek satirlardaki arayan) TUM giden Dial cagrilari - baska
+        //     trunk/route uzerinden de cikmis mi? channel=PJSIP/34-... + Dial + disaridan.
+        $s = $pdo->prepare("SELECT COUNT(*) a, COALESCE(SUM(billsec),0) b FROM cdr
+                            WHERE channel LIKE 'PJSIP/34-%' AND lastapp='Dial'
+                              AND disposition='ANSWERED' AND LENGTH(dst) >= 7");
+        $s->execute();
+        $r = $s->fetch(PDO::FETCH_ASSOC);
+        $out['J_dahili34_tum_giden_dial'] = ['adet'=>(int)$r['a'],'dakika'=>round($r['b']/60,1),'saniye'=>(int)$r['b']];
 
     } catch (PDOException $e) {
         $out['error'] = $e->getMessage();
