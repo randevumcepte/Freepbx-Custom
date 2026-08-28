@@ -10,6 +10,8 @@ class Dialog {
   constructor(callContext) {
     // callContext: { salonAdi, salonId, userId, musteriAdi, hizmetler, enYakinRandevu, paket, stub? }
     this.ctx = { ...callContext, lastAvailability: new Map(), control: null };
+    // HANGI BEYIN AKTIF? (logda net gorunsun -> "groq mu rules mi" karisikligi biter)
+    console.log(`[beyin] AKTIF = ${config.brain}  (STT=${config.stt.engine}, TTS=${config.tts.engine})`);
 
     const system = buildSystemPrompt({
       ...callContext,
