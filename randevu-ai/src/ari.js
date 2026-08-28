@@ -35,6 +35,7 @@ class CallSession {
     const did = this.args[1] || (this.channel.dialplan && this.channel.dialplan.exten) || '';
     this._log(`baglam yukleniyor caller=${callerId} did=${did}`);
     this.ctx = await loadCallContext(callerId, did);
+    this.ctx.callerId = callerId; // kural-tabanli beyin yeni musteri icin CallerID telefonunu kullanir
     this._log(`baglam OK salon="${this.ctx.salonAdi}" hizmet=${(this.ctx.hizmetler || []).length} randevu=${(this.ctx.enYakinRandevu || []).length}`);
     this.dialog = new Dialog(this.ctx);
 
@@ -74,7 +75,10 @@ class CallSession {
   _listen() {
     if (this.finished) return;
     this._log('dinliyor...');
-    this.stt = new SttStream({
+    // STT motoru: google (streaming, dusuk gecikme) | groq/whisper (batch, stt.js).
+    // Lazy-require: sadece engine=google iken @google-cloud/speech yuklenir.
+    const SttCls = config.stt.engine === 'google' ? require('./stt_google').GoogleSttStream : SttStream;
+    this.stt = new SttCls({
       onInterim: (t) => {
         // Barge-in: asistan konusurken musteri konusmaya baslarsa calmayi kes + kuyrugu bosalt.
         if ((this.playing || this.playQueue.length) && t) this._bargeIn();

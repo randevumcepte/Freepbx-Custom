@@ -18,7 +18,11 @@ class Dialog {
       }),
     });
 
-    if (config.brain === 'claude') {
+    if (config.brain === 'rules') {
+      // LLM YOK — kural-tabanli beyin (PHP AGI akisinin portu). Sifir LLM maliyeti.
+      const { RulesEngine } = require('./engines/rules');
+      this.engine = new RulesEngine({ system, ctx: this.ctx, executeTool });
+    } else if (config.brain === 'claude') {
       const { ClaudeEngine } = require('./engines/claude');
       this.engine = new ClaudeEngine({ system, ctx: this.ctx, tools: toolDefinitions(), executeTool });
     } else if (config.brain === 'groq') {

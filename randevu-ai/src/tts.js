@@ -1,5 +1,8 @@
 'use strict';
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const axios = require('axios');
 const { execFile } = require('child_process');
 const config = require('./config');
 
@@ -46,6 +49,26 @@ function speak(text, callId) {
         run('ffmpeg', ['-y', '-loglevel', 'error', '-i', `${base}.mp3`, '-ar', '8000', '-ac', '1', `${base}.wav`],
           (e2) => e2 ? reject(e2) : resolve(`sound:${base}`));
       });
+    } else if (config.tts.engine === 'google') {
+      // Google WaveNet (erkek) — mevcut /seslendir ucu (uygulama iOS ile AYNI ses).
+      // BUYUK harf kelimeleri (ORBEY) bas-harfi-buyuk yap (harf harf okumasin) — sunucu
+      // okunusHazirla bunu telafi etmiyor. YEREL CACHE: ayni metin diskteyse Google'i,
+      // indirmeyi, ffmpeg'i HIC cagirma (bedava + aninda). Sabit cumleler bir kez uretilir.
+      const okunacak = capsFix(text);
+      const gbase = path.join(config.tts.outDir, 'rai-g-' + crypto.createHash('md5').update(okunacak).digest('hex'));
+      if (fs.existsSync(`${gbase}.wav`) && fs.statSync(`${gbase}.wav`).size > 0) return resolve(`sound:${gbase}`);
+      (async () => {
+        try {
+          const r = await axios.post(`${config.api.base}/api/v1/seslendir`,
+            new URLSearchParams({ metin: okunacak }).toString(),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 15000 });
+          if (!r.data || r.data.basarili !== true || !r.data.url) throw new Error('seslendir bos');
+          const mp3 = await axios.get(r.data.url, { responseType: 'arraybuffer', timeout: 15000 });
+          fs.writeFileSync(`${gbase}.mp3`, Buffer.from(mp3.data));
+          run('ffmpeg', ['-y', '-loglevel', 'error', '-i', `${gbase}.mp3`, '-ar', '8000', '-ac', '1', `${gbase}.wav`],
+            (e2) => e2 ? reject(e2) : resolve(`sound:${gbase}`));
+        } catch (e) { reject(e); }
+      })();
     } else if (config.tts.engine === 'piper') {
       // Piper (ucretsiz, offline) -> dogrudan wav (genelde 22.05kHz; Asterisk resample eder).
       run('sh', ['-c', `printf '%s' ${shq(text)} | piper --model ${shq(config.tts.piperModel)} --output_file ${shq(base + '.wav')}`],
@@ -56,6 +79,12 @@ function speak(text, callId) {
         (err) => err ? reject(err) : resolve(`sound:${base}`));
     }
   });
+}
+
+// BUYUK harf kelimeleri (LAZER, ORBEY) bas-harfi-buyuk forma cevir (TTS harf harf okumasin).
+function capsFix(s) {
+  return String(s || '').replace(/[A-ZÇĞİÖŞÜ]{2,}/g, (w) =>
+    w.charAt(0) + w.slice(1).toLocaleLowerCase('tr'));
 }
 
 // sh icin guvenli tirnak
