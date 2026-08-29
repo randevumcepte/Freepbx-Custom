@@ -16,7 +16,9 @@ const config = require('./config');
 const client = new speech.SpeechClient();
 
 const MAX_MS = parseInt(process.env.VAD_MAX_MS || '12000', 10); // konusma gelmezse kapat
-const SESSIZLIK_MS = 1500; // ilk interim'den sonra final gelmezse yedekle kapat
+const SESSIZLIK_MS = 3000; // YEDEK: interim'den sonra Google isFinal HIC gelmezse kapat.
+                           // Kisa tutunca Google'in gercek endpoint'inden ONCE kapatip sozu
+                           // boluyordu (ikinci stream ayni sesi tekrar yaziyordu). isFinal asildir.
 
 class GoogleSttStream {
   constructor({ onInterim, onFinal, phrases } = {}) {
@@ -55,9 +57,11 @@ class GoogleSttStream {
           if (t) {
             this.lastInterim = t;
             this.onInterim(t); // barge-in
-            // Konusma basladi: interim'ler geliyor; kisa sessizlikte final gelmezse yedekle kapat.
+            // Konusma basladi. Google'in isFinal'ini (gercek endpoint) BEKLE — kendi
+            // zamanlayicimla yarisip stream'i erken kapatmak sozu boluyor + ikinci stream
+            // ayni sesi tekrar yaziyordu. Yedek: interim'den sonra UZUN sessizlikte kapat.
             if (this._sessizT) clearTimeout(this._sessizT);
-            this._sessizT = setTimeout(() => { console.error('[gstt] sessizlik, interim ile kapatiyorum="' + this.lastInterim + '"'); this._finish(this.lastInterim, null); }, SESSIZLIK_MS);
+            this._sessizT = setTimeout(() => { console.error('[gstt] uzun sessizlik, interim ile kapatiyorum="' + this.lastInterim + '"'); this._finish(this.lastInterim, null); }, SESSIZLIK_MS);
           }
         });
     } catch (e) {
