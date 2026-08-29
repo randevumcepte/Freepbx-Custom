@@ -471,37 +471,54 @@ class RulesEngine {
     return this._musaitlikGoster(say);
   }
 
+  /** Personel id->ad haritasi (personelgetir; GUVENILIR isim kaynagi). Cache'li. */
+  async _personelAdlari() {
+    if (this._personelMap) return this._personelMap;
+    const map = new Map();
+    try {
+      const { data } = await axios.get(`${API}/personelgetir/${encodeURIComponent(this.salonId)}`, { timeout: 15000 });
+      const lst = (data && Array.isArray(data.data)) ? data.data : (Array.isArray(data) ? data : []);
+      for (const p of lst) { if (p && p.id != null) map.set(String(p.id), String(p.personel_adi || p.name || p.ad || '').trim()); }
+    } catch (_) {}
+    this._personelMap = map;
+    return map;
+  }
+
   /** Personel belirtilmemis musaitlik: salonun personellerini gezip EN ERKEN boslugu + adiyla anons et. */
   async _musaitlikGenel(say) {
-    // Aday personeller: ctx.hizmetler[].personeller (uniq). Yoksa paket personelleri.
-    const map = new Map();
+    const adMap = await this._personelAdlari(); // guvenilir adlar
+    // Aday personeller: ctx.hizmetler[].personeller (uniq). Yoksa paket personelleri, yoksa personelgetir.
+    const ids = new Map();
     for (const h of (this.ctx.hizmetler || [])) for (const p of (h.personeller || [])) {
-      if (p && p.id != null && !map.has(String(p.id))) map.set(String(p.id), p.ad || p.personel_adi || '');
+      if (p && p.id != null && !ids.has(String(p.id))) ids.set(String(p.id), 1);
     }
-    if (!map.size && this.ctx.paket) for (const p of (this.ctx.paket.personeller || [])) {
-      if (p && p.id != null && !map.has(String(p.id))) map.set(String(p.id), p.ad || '');
+    if (!ids.size && this.ctx.paket) for (const p of (this.ctx.paket.personeller || [])) {
+      if (p && p.id != null && !ids.has(String(p.id))) ids.set(String(p.id), 1);
     }
-    const adaylar = [...map.entries()].slice(0, 8); // ilk 8 (sure/maliyet siniri)
+    if (!ids.size) for (const pid of adMap.keys()) ids.set(String(pid), 1); // son care: tum personel
+    const adaylar = [...ids.keys()].slice(0, 8); // ilk 8 (sure/maliyet siniri)
     if (!adaylar.length) { say('Şu an müsaitlik bilgisine ulaşamadım. Başka bir işlem ister misiniz?'); this.state = 'niyet'; return; }
 
     say('En erken müsaitlik aranıyor, sizi biraz bekleteceğim efendim.');
-    const sonuclar = await Promise.all(adaylar.map(async ([pid, ad]) => {
+    const sonuclar = await Promise.all(adaylar.map(async (pid) => {
       const m = await musaitlikApi(this.salonId, pid, '0', this.slots.tarih, this.slots.saat, this.slots.vakit);
-      return { pid, ad, m };
+      return { pid, m };
     }));
     let enIyi = null;
     for (const s of sonuclar) {
       if (s.m && s.m.bulundu === true) {
         const key = String(s.m.tarih) + (s.m.saat || '');
-        if (!enIyi || key < enIyi.key) enIyi = { key, pid: s.pid, ad: s.ad, tarih: s.m.tarih, saat: s.m.saat };
+        if (!enIyi || key < enIyi.key) enIyi = { key, pid: s.pid, tarih: s.m.tarih, saat: s.m.saat };
       }
     }
     if (!enIyi) { say('Belirttiğiniz aralıkta müsait bir saat bulamadım. Başka bir işlem ister misiniz?'); this.state = 'niyet'; return; }
 
-    // Anons: en erken saat + PERSONEL ADI ile
-    say(`En yakın müsait saat ${zamanSozlu(enIyi.tarih, enIyi.saat)}, ${enIyi.ad} isimli personel ile.`);
-    // Randevuya donusturulebilsin diye slotu doldur (evet derse booking bu personel/tarih/saatle ilerler)
-    this.slots.personelId = enIyi.pid; this.slots.personelAdi = enIyi.ad;
+    // Anons: en erken saat + PERSONEL ADI (guvenilir haritadan; yoksa sadece saat)
+    const ad = (adMap.get(String(enIyi.pid)) || '').trim();
+    const zaman = zamanSozlu(enIyi.tarih, enIyi.saat);
+    say(ad ? `En yakın müsait saat ${zaman}, ${ad} isimli personel ile.` : `En yakın müsait saat ${zaman}.`);
+    // Randevuya donusturulebilsin diye slotu doldur
+    this.slots.personelId = enIyi.pid; this.slots.personelAdi = ad;
     this.slots.tarih = enIyi.tarih; this.slots.saat = enIyi.saat;
     say('Bu saate randevu oluşturmamı ister misiniz?');
     this.state = 'm_teklif';
