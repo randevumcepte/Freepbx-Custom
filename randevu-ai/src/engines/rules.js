@@ -133,13 +133,16 @@ function randevuHizmetAdi(r) {
 /* MOTOR                                                               */
 /* ------------------------------------------------------------------ */
 class RulesEngine {
-  constructor({ ctx }) {
+  constructor({ ctx, executeTool }) {
     this.ctx = ctx || {};
     this.salonId = this.ctx.salonId;
     this.userId = this.ctx.userId || '';
     this.callerId = this.ctx.callerId || this.ctx.callerid || '';
+    // Paket akisi ekip arkadaşinin test edilmis tool'larini kullanir (dogru uclar + paketBilgi).
+    this.executeTool = executeTool || (async () => ({ toModel: '', isError: true }));
     this.state = 'niyet';
     this.kufurSay = 0;
+    this._ilkTur = true; // karsilamadaki paket teklifine "evet" -> paket akisi
     this.dryRun = !!(this.ctx && this.ctx.dryRun); // test: gercek olustur/iptal/kayit YAPMA
     this._resetSlots();
   }
@@ -149,6 +152,7 @@ class RulesEngine {
     this.hedefRandevu = null;   // iptal/guncelle icin secilen randevu
     this.yeniAd = null;         // yeni musteri
     this._hizmetDeneme = 0;     // hizmet bulunamadi deneme sayaci
+    this.paketPersonelId = null; // paket randevusu personeli
   }
 
   /** coz sonucunu slotlara doldur (dolu alani ezme) — PHP uygula(). */
@@ -222,12 +226,27 @@ class RulesEngine {
       case 'g_yeni': return this._guncelleYeni(c, say);
       case 'm_personel': return this._musaitlikPersonel(c, say);
       case 'm_teklif': return this._musaitlikTeklif(c, say);
+      case 'p_tarih': return this._paketTarih(c, say);
+      case 'p_saat': return this._paketSaat(c, say);
+      case 'p_onay': return this._paketOnay(c, say);
       default: this.state = 'niyet'; return this._niyet(c, say);
     }
   }
 
   /* -------- NIYET -------- */
   async _niyet(c, say) {
+    const ilk = this._ilkTur; this._ilkTur = false;
+    const f = fold(c);
+    const paketVar = this.ctx.paket && this.ctx.paket.bekleyenSeans;
+    // PAKET: "paket/paketten/paketimden" ya da karsilamadaki paket teklifine "evet".
+    if (paketVar && (/paket/.test(f) || (ilk && olumluMu(c) && !/hizmet|hayir|degil|baska/.test(f)))) {
+      this._resetSlots(); return this._paketBaslat(c, say);
+    }
+    if (/paket/.test(f) && !paketVar) {
+      this._resetSlots(); this.state = 'b_hizmet';
+      say('Aktif bir paketiniz görünmüyor. Dilerseniz normal randevu oluşturabilirim; hangi hizmet için?');
+      return;
+    }
     const niyet = niyetBul(c);
     if (niyet === 'iptal') { this._resetSlots(); return this._iptalBaslat(c, say); }
     if (niyet === 'guncelle') { this._resetSlots(); return this._guncelleBaslat(c, say); }
@@ -472,6 +491,70 @@ class RulesEngine {
     // Booking'e gec: personel/tarih/saat hazir; hizmet yoksa sorulur
     if (this.slots.hizmetId === null || this.slots.hizmetId === '0' || this.slots.hizmetId === '') { this.slots.hizmetId = null; }
     return this._bookingIlerle(say);
+  }
+
+  /* -------- PAKET RANDEVU (executeTool: uygun_randevu_bul/randevu_olustur, paketten:true) -------- */
+  async _paketBaslat(c, say) {
+    const paket = this.ctx.paket;
+    const r = await cozApi(this.salonId, c); // cumlede tarih/saat/personel gecmis olabilir
+    if (r) {
+      if (r.tarih) this.slots.tarih = r.tarih;
+      if (r.saat) this.slots.saat = r.saat;
+      if (r.vakit) this.slots.vakit = String(r.vakit);
+      const p = r.personel; const sabit = p && p.sabit === true;
+      if (p && !sabit && p.personel_id && String(p.personel_id) !== '0') this.paketPersonelId = String(p.personel_id);
+    }
+    // Personel verilmediyse paketin personeli (yoksa null -> backend secer).
+    if (this.paketPersonelId == null) this.paketPersonelId = (paket.personeller && paket.personeller[0] && paket.personeller[0].id) || null;
+    return this._paketIlerle(say);
+  }
+
+  _paketIlerle(say) {
+    if (this.slots.tarih === null && this.slots.vakit === null) { this.state = 'p_tarih'; say(`${this.ctx.paket.paketAdi} paketinizden randevu oluşturalım. Hangi gün olsun?`); return; }
+    if (this.slots.saat === null && this.slots.vakit === null) { this.state = 'p_saat'; say('Saat kaçta olsun? İsterseniz en uygun saati ben ayarlayabilirim.'); return; }
+    return this._paketUygunluk(say);
+  }
+
+  async _paketTarih(c, say) {
+    const r = await cozApi(this.salonId, c);
+    if (r) { if (r.tarih) this.slots.tarih = r.tarih; if (r.vakit) this.slots.vakit = String(r.vakit); }
+    if (this.slots.tarih === null && this.slots.vakit === null) { say('Anlayamadım. Bugün, yarın ya da bir gün söyleyin.'); return; }
+    return this._paketIlerle(say);
+  }
+
+  async _paketSaat(c, say) {
+    if (/farketmez|fark etmez|sen ayarla|en yakin|ne uygunsa|uygun olan|onemli degil/.test(fold(c))) {
+      // saat bos; asagida vakit/varsayilan ile en yakini buldururuz
+    } else {
+      const r = await cozApi(this.salonId, c, true);
+      if (r) { if (r.saat) this.slots.saat = r.saat; if (r.vakit) this.slots.vakit = String(r.vakit); }
+    }
+    return this._paketUygunluk(say);
+  }
+
+  async _paketUygunluk(say) {
+    say('Uygunluk aranıyor, sizi biraz bekleteceğim efendim.');
+    // tarihSaat kur: saat yoksa vakitten baslangic saati (backend en yakini doner)
+    let saat = this.slots.saat;
+    if (!saat) { const v = this.slots.vakit; saat = v === 'sabah' ? '09:00' : v === 'aksam' ? '17:00' : v === 'ogleden_sonra' ? '13:00' : '10:00'; }
+    const tarihSaat = `${this.slots.tarih} ${saat}`;
+    if (this.dryRun) { this.ctx.lastAvailability = new Map(); this.ctx.lastAvailability.set('slot', { tarihSaat, paketten: true }); }
+    else await this.executeTool('uygun_randevu_bul', { tarihSaat, paketten: true, personelId: this.paketPersonelId }, this.ctx);
+    const slot = this.ctx.lastAvailability && this.ctx.lastAvailability.get('slot');
+    if (!slot || !slot.tarihSaat) { say('Paketiniz için müsait bir saat bulamadım. Başka bir işlem ister misiniz?'); this.state = 'niyet'; this._resetSlots(); return; }
+    const parts = String(slot.tarihSaat).split(' ');
+    this.slots.tarih = parts[0]; this.slots.saat = (parts[1] || '').slice(0, 5);
+    say(`${this.ctx.paket.paketAdi} paketinizden, ${zamanSozlu(this.slots.tarih, this.slots.saat)}. Onaylıyor musunuz?`);
+    this.state = 'p_onay';
+  }
+
+  async _paketOnay(c, say) {
+    if (!olumluMu(c)) { say('Tamam, oluşturmadım. Başka bir işlem ister misiniz?'); this.state = 'niyet'; this._resetSlots(); return; }
+    say('Randevu oluşturuluyor, lütfen bekleyin.');
+    const r = this.dryRun ? { isError: false } : await this.executeTool('randevu_olustur', { paketten: true }, this.ctx);
+    if (r && r.isError) say('Paket randevusu oluşturulurken bir sorun oldu. Başka bir işlem ister misiniz?');
+    else say('Paket randevunuzu oluşturdum ve size bilgilendirme mesajı ilettim. Başka bir işlem ister misiniz?');
+    this.state = 'niyet'; this._resetSlots();
   }
 }
 
