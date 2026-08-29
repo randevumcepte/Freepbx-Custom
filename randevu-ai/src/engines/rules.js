@@ -100,6 +100,12 @@ async function iptalApi(randevuId) {
     return data || {};
   } catch (_) { return { hata: 'baglanti' }; }
 }
+async function borcApi(salonId, userId) {
+  try {
+    const { data } = await axios.post(`${API}/alacakKontrol`, { salon_id: salonId, user_id: userId }, { headers: { 'Content-Type': 'application/json' }, timeout: 20000 });
+    return data || {};
+  } catch (_) { return {}; }
+}
 async function musteriRandevulariApi(salonId, userId) {
   try {
     const { data } = await axios.get(`${API}/musteri-randevulari/${encodeURIComponent(userId)}`, { params: { salon_id: salonId }, timeout: 20000 });
@@ -252,6 +258,7 @@ class RulesEngine {
     if (niyet === 'guncelle') { this._resetSlots(); return this._guncelleBaslat(c, say); }
     if (niyet === 'musaitlik') { this._resetSlots(); return this._musaitlikBaslat(c, say); }
     if (niyet === 'sorgula') return this._sorgula(say);
+    if (niyet === 'borc') return this._borcSorgula(say);
     // 'al' -> randevu
     this._resetSlots();
     this._uygula(await cozApi(this.salonId, c));
@@ -269,6 +276,21 @@ class RulesEngine {
     const ad = randevuHizmetAdi(ilk);
     const ek = aktif.length > 1 ? ` Ayrıca ${aktif.length - 1} randevunuz daha bulunuyor.` : '';
     say(`En yakın randevunuz ${zamanSozlu(ilk.tarih, ilk.saat)}${ad ? ', ' + ad : ''}.${ek} Başka bir işlem ister misiniz?`);
+    this.state = 'niyet';
+  }
+
+  /* -------- BORÇ / VADE SORGUSU -------- */
+  async _borcSorgula(say) {
+    if (!this.userId) { say('Sizi kayıtlarımızda bulamadığım için borç bilginize ulaşamıyorum. Başka bir işlem ister misiniz?'); this.state = 'niyet'; return; }
+    const r = await borcApi(this.salonId, this.userId);
+    let msg = String((r && r.message) || '').trim();
+    // Sesli asistan icin DTMF ("...tuşlayınız") ve "ana menüye yönlendiriyorum" kismini kirp.
+    msg = msg.replace(/\.?\s*(Ödemeyi bugün içinde[\s\S]*|Sizi tekrar ana menüye[\s\S]*)$/u, '').trim();
+    if (r && r.borc_var) {
+      say(`${msg}. Ödeme için işletmemizle iletişime geçebilirsiniz. Başka bir işlem ister misiniz?`);
+    } else {
+      say(`${msg || 'Vadesi geçmiş bir borcunuz görünmüyor'}. Başka bir işlem ister misiniz?`);
+    }
     this.state = 'niyet';
   }
 

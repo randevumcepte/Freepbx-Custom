@@ -135,6 +135,8 @@ function niyetBul(metin) {
   if (c.indexOf('iptal') !== -1) return 'iptal';
   if (/guncelle|degistir|ertele|tasi|one al|ileri al|saatini|tarihini|yerine/.test(c)) return 'guncelle';
   if (/musait|musaitlik|bosluk|bos yer|bos mu|dolu mu|yer var|uygun mu|uygunluk|ne zaman bos/.test(c)) return 'musaitlik';
+  // Borc/vade sorgusu (sorgula'dan ONCE: "borcum var mi" -> borc, "randevum var mi" -> sorgula)
+  if (/borc|borcum|vade|vadesi|taksit|senet|odemem|odeme.*var|ne kadar.*(borc|odeme|param)|alacag/.test(c)) return 'borc';
   if (/ogren|var mi|ne zaman|hangi gun|randevum ne|sorgula|kontrol|bakar mis|ogrenmek|gorayim|goreyim/.test(c)) return 'sorgula';
   return 'al';
 }
