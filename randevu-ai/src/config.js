@@ -3,6 +3,10 @@
 // zaten var olan degiskeni ezmez -> eski GROQ_API_KEY/model takili kalip 404 verebiliyordu.)
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env'), override: true });
 
+// Sunucuda IPv6 rotasi yok -> Cloudflare/Google AAAA'ya baglanirken "EHOSTUNREACH 2606:..."
+// oluyordu. Tum Node DNS cozumlerinde IPv4'u ONCELE (coz/seslendir/Google STT hepsi duzelir).
+try { require('dns').setDefaultResultOrder('ipv4first'); } catch (_) {}
+
 // Turkiye saati — LLM'e "bugun" referansini dogru vermek icin tek kaynak.
 // (Eski sistemde node cocuk surecine TZ gecilmedigi icin gece gun kaymasi oluyordu;
 //  burada tarih hesabi tek yerde ve acikca Europe/Istanbul.)

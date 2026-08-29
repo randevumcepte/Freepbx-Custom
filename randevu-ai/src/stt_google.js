@@ -1,70 +1,88 @@
 'use strict';
 /**
- * Google Cloud Speech STREAMING STT — sesli-randevu-akis.php'nin batch Google STT'sinin
- * aksine GERCEK ZAMANLI: PCM surekli akitilir, konusma bitisini Google'in endpointing'i
- * (single_utterance) ANINDA yakalar -> sabit sessizlik beklemesi + batch turu YOK.
+ * Google Cloud Speech STREAMING STT — gercek zamanli. PCM surekli akitilir; Google interim
+ * sonuclar dondurur, dogal duraklamada isFinal yollar.
  *
  * stt.js SttStream ile AYNI sozlesme: new GoogleSttStream({onInterim,onFinal}) + write(pcm)
- * + end(). ari.js:_listen bunu fabrika ile secer (config.stt.engine==='google'). rtp.js
- * zaten 16kHz LINEAR16 (little-endian) PCM chunk'lari uretir -> dogrudan write() ile beslenir.
+ * + end(). ari.js:_listen bunu fabrika ile secer. rtp.js 16kHz LINEAR16 (LE) PCM uretir.
  *
- * Kimlik: GOOGLE_APPLICATION_CREDENTIALS env'i gcp-key.json'a isaret etmeli (mevcut
- * sesli-yanit/gcp-key.json yeniden kullanilabilir).
+ * TASARIM: single_utterance KULLANMIYORUZ (baslangic sessizliginde erken kapatabiliyor).
+ * Bunun yerine interimResults ile dinler; ILK DOLU isFinal sonucunda bitiririz (dogal
+ * konusma-sonu). Hic konusma gelmezse guvenlik zamanlayicisi ile bos biter -> "duyamadim".
  */
 const speech = require('@google-cloud/speech');
 const config = require('./config');
 
 const client = new speech.SpeechClient();
 
+const MAX_MS = parseInt(process.env.VAD_MAX_MS || '12000', 10); // konusma gelmezse kapat
+const SESSIZLIK_MS = 1500; // ilk interim'den sonra final gelmezse yedekle kapat
+
 class GoogleSttStream {
   constructor({ onInterim, onFinal, phrases } = {}) {
     this.onInterim = onInterim || (() => {});
     this.onFinal = onFinal || (() => {});
     this.done = false;
-    this.finalText = '';
+    this.lastInterim = '';
+    this._wroteAudio = false;
+    this._sessizT = null;
 
     const cfg = {
       encoding: 'LINEAR16',
       sampleRateHertz: config.stt.sampleRateHertz || 16000,
       languageCode: config.stt.language || 'tr-TR',
-      enableAutomaticPunctuation: false,
-      useEnhanced: true,
+      enableAutomaticPunctuation: true,
     };
-    // Salon-ozel isim/hizmet ipuclari (varsa) -> isim tanima artar.
     if (phrases && phrases.length) cfg.speechContexts = [{ phrases, boost: 15 }];
+
+    // Guvenlik: hic konusma gelmezse (sadece sessizlik) MAX_MS sonra bos bitir.
+    this._maxT = setTimeout(() => { console.error('[gstt] MAX_MS doldu, bos bitiriyorum'); this._finish(this.lastInterim, null); }, MAX_MS);
 
     try {
       this.stream = client
-        .streamingRecognize({ config: cfg, interimResults: true, singleUtterance: true })
-        .on('error', (e) => this._finish('', e))
+        .streamingRecognize({ config: cfg, interimResults: true, singleUtterance: false })
+        .on('error', (e) => { console.error('[gstt] error:', e && e.message); this._finish('', e); })
+        .on('end', () => { console.error('[gstt] stream end, yedek="' + this.lastInterim + '"'); this._finish(this.lastInterim, null); })
         .on('data', (data) => {
-          // Konusma bitisi (endpointing) — hemen sonlandir.
-          if (data.speechEventType === 'END_OF_SINGLE_UTTERANCE') {
-            this._finish(this.finalText, null);
-            return;
-          }
           const r = data.results && data.results[0];
           if (!r) return;
-          const t = (r.alternatives && r.alternatives[0] && r.alternatives[0].transcript) || '';
-          if (r.isFinal) { this.finalText = String(t).trim(); this._finish(this.finalText, null); }
-          else if (t) { this.onInterim(String(t)); } // barge-in tetigi (gercek interim metin)
+          const t = ((r.alternatives && r.alternatives[0] && r.alternatives[0].transcript) || '').trim();
+          if (r.isFinal) {
+            if (t) { console.error('[gstt] FINAL="' + t + '"'); this._finish(t, null); }
+            // bos isFinal (sessizlik) -> yok say, dinlemeye devam
+            return;
+          }
+          if (t) {
+            this.lastInterim = t;
+            this.onInterim(t); // barge-in
+            // Konusma basladi: interim'ler geliyor; kisa sessizlikte final gelmezse yedekle kapat.
+            if (this._sessizT) clearTimeout(this._sessizT);
+            this._sessizT = setTimeout(() => { console.error('[gstt] sessizlik, interim ile kapatiyorum="' + this.lastInterim + '"'); this._finish(this.lastInterim, null); }, SESSIZLIK_MS);
+          }
         });
     } catch (e) {
-      // Kimlik/kutuphane sorunu -> onFinal err ile (ari.js operatore aktarir)
+      console.error('[gstt] kurulum hatasi:', e && e.message);
       setImmediate(() => this._finish('', e));
     }
   }
 
   write(pcm) {
     if (this.done || !this.stream) return;
-    try { if (this.stream.writable) this.stream.write(pcm); } catch (_) {}
+    try {
+      if (this.stream.writable) {
+        this.stream.write(pcm);
+        if (!this._wroteAudio) { this._wroteAudio = true; console.error('[gstt] ilk pcm yazildi (' + pcm.length + ' byte)'); }
+      }
+    } catch (_) {}
   }
 
-  end() { this._finish(this.finalText, null); }
+  end() { this._finish(this.lastInterim, null); }
 
   _finish(text, err) {
     if (this.done) return;
     this.done = true;
+    if (this._maxT) { clearTimeout(this._maxT); this._maxT = null; }
+    if (this._sessizT) { clearTimeout(this._sessizT); this._sessizT = null; }
     try { if (this.stream) this.stream.end(); } catch (_) {}
     this.onFinal(String(text || '').trim(), err || null);
   }
