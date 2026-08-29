@@ -466,8 +466,45 @@ class RulesEngine {
       if (p && !sabit && p.personel_id && String(p.personel_id) !== '0') { this.slots.personelId = String(p.personel_id); this.slots.personelAdi = p.personel_adi || null; }
       const h = (r.hizmetler || [])[0]; if (h) this.slots.hizmetId = String(h.hizmet_id);
     }
-    if (this.slots.personelId === null) { this.state = 'm_personel'; say('Hangi personelin müsaitliğine bakayım?'); return; }
+    // Personel adi GECMIYORSA -> genel (en erken) musaitligi personel adiyla anons et.
+    if (this.slots.personelId === null) return this._musaitlikGenel(say);
     return this._musaitlikGoster(say);
+  }
+
+  /** Personel belirtilmemis musaitlik: salonun personellerini gezip EN ERKEN boslugu + adiyla anons et. */
+  async _musaitlikGenel(say) {
+    // Aday personeller: ctx.hizmetler[].personeller (uniq). Yoksa paket personelleri.
+    const map = new Map();
+    for (const h of (this.ctx.hizmetler || [])) for (const p of (h.personeller || [])) {
+      if (p && p.id != null && !map.has(String(p.id))) map.set(String(p.id), p.ad || p.personel_adi || '');
+    }
+    if (!map.size && this.ctx.paket) for (const p of (this.ctx.paket.personeller || [])) {
+      if (p && p.id != null && !map.has(String(p.id))) map.set(String(p.id), p.ad || '');
+    }
+    const adaylar = [...map.entries()].slice(0, 8); // ilk 8 (sure/maliyet siniri)
+    if (!adaylar.length) { say('Şu an müsaitlik bilgisine ulaşamadım. Başka bir işlem ister misiniz?'); this.state = 'niyet'; return; }
+
+    say('En erken müsaitlik aranıyor, sizi biraz bekleteceğim efendim.');
+    const sonuclar = await Promise.all(adaylar.map(async ([pid, ad]) => {
+      const m = await musaitlikApi(this.salonId, pid, '0', this.slots.tarih, this.slots.saat, this.slots.vakit);
+      return { pid, ad, m };
+    }));
+    let enIyi = null;
+    for (const s of sonuclar) {
+      if (s.m && s.m.bulundu === true) {
+        const key = String(s.m.tarih) + (s.m.saat || '');
+        if (!enIyi || key < enIyi.key) enIyi = { key, pid: s.pid, ad: s.ad, tarih: s.m.tarih, saat: s.m.saat };
+      }
+    }
+    if (!enIyi) { say('Belirttiğiniz aralıkta müsait bir saat bulamadım. Başka bir işlem ister misiniz?'); this.state = 'niyet'; return; }
+
+    // Anons: en erken saat + PERSONEL ADI ile
+    say(`En yakın müsait saat ${zamanSozlu(enIyi.tarih, enIyi.saat)}, ${enIyi.ad} isimli personel ile.`);
+    // Randevuya donusturulebilsin diye slotu doldur (evet derse booking bu personel/tarih/saatle ilerler)
+    this.slots.personelId = enIyi.pid; this.slots.personelAdi = enIyi.ad;
+    this.slots.tarih = enIyi.tarih; this.slots.saat = enIyi.saat;
+    say('Bu saate randevu oluşturmamı ister misiniz?');
+    this.state = 'm_teklif';
   }
   async _musaitlikPersonel(c, say) {
     const r = await cozApi(this.salonId, c);
