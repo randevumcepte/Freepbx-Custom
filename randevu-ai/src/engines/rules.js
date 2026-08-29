@@ -148,6 +148,7 @@ class RulesEngine {
     this.slots = { hizmetId: null, hizmetAdi: null, hizmetFiyat: '0', hizmetSure: '30', personelId: null, personelAdi: null, tarih: null, saat: null, vakit: null, randevuId: '', guncelleme: false };
     this.hedefRandevu = null;   // iptal/guncelle icin secilen randevu
     this.yeniAd = null;         // yeni musteri
+    this._hizmetDeneme = 0;     // hizmet bulunamadi deneme sayaci
   }
 
   /** coz sonucunu slotlara doldur (dolu alani ezme) — PHP uygula(). */
@@ -271,7 +272,23 @@ class RulesEngine {
     } else {
       this._uygula(await cozApi(this.salonId, c, saatCevabi));
     }
+    // HIZMET cevabinda eslesme yoksa: "Maalesef X hizmetini veremiyoruz" (jenerik tekrar degil).
+    if (this.state === 'b_hizmet' && (this.slots.hizmetId === null || this.slots.hizmetId === '') && c.trim() !== '') {
+      this._hizmetDeneme = (this._hizmetDeneme || 0) + 1;
+      if (this._hizmetDeneme >= 3) { say('Maalesef istediğiniz hizmeti sistemimizde bulamadım, bu işlemi kapatıyorum. Başka bir işlem ister misiniz?'); this.state = 'niyet'; this._resetSlots(); return; }
+      const ad = this._hizmetAdiSoyle(c);
+      say(`Maalesef ${ad} hizmetini veremiyoruz. Başka bir hizmet söyleyebilir misiniz?`);
+      return; // b_hizmet'te kal
+    }
+    this._hizmetDeneme = 0;
     return this._bookingIlerle(say);
+  }
+
+  /** "saç bakımı istiyorum" -> "saç bakımı" (dolgu kelimeleri kirp, mesajda soyle). */
+  _hizmetAdiSoyle(c) {
+    const at = new Set(['randevu', 'randevusu', 'istiyorum', 'isterim', 'olsun', 'hizmeti', 'hizmet', 'islem', 'icin', 'lutfen', 'almak', 'alabilir', 'yaptirmak', 'yaptiracagim', 'rica', 'ederim', 'ver', 'verin', 'bir', 'de', 'da']);
+    const kelimeler = String(c || '').trim().split(/\s+/).filter((w) => !at.has(fold(w)));
+    return kelimeler.join(' ').trim() || String(c || '').trim();
   }
 
   async _musaitlikVeOnay(say) {
