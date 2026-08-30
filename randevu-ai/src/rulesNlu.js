@@ -134,6 +134,10 @@ function niyetBul(metin) {
   const c = fold(metin);
   if (c.indexOf('iptal') !== -1) return 'iptal';
   if (/guncelle|degistir|ertele|tasi|one al|ileri al|saatini|tarihini|yerine/.test(c)) return 'guncelle';
+  // Operatore/isletmeye baglanma
+  if (/operator|operatore|yetkiliye|isletmeye baglan|birine baglan|canli destek|musteri temsilci|baglar misi|baglayabilir|baglanmak istiyorum|santrale baglan/.test(c)) return 'operator';
+  // Hizmet LISTESI sorgusu ("hangi hizmetleri veriyorsunuz", "hizmetleriniz neler") — randevu DEGIL.
+  if (!/randevu/.test(c) && (/hangi hizmet.*(var|veriy|yapiyor|sunuyor|mevcut)|hizmetler.*(neler|nedir|var)|hizmetleriniz|ne.*hizmet.*(var|veriy)|hizmet listesi|neler yap(iyor|abiliyor)/.test(c))) return 'hizmetler';
   if (/musait|musaitlik|bosluk|bos yer|bos mu|dolu mu|yer var|uygun mu|uygunluk|ne zaman bos/.test(c)) return 'musaitlik';
   // Borc/vade sorgusu (sorgula'dan ONCE: "borcum var mi" -> borc, "randevum var mi" -> sorgula)
   if (/borc|borcum|vade|vadesi|taksit|senet|odemem|odeme.*var|ne kadar.*(borc|odeme|param)|alacag/.test(c)) return 'borc';

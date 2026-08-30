@@ -254,6 +254,8 @@ class RulesEngine {
       return;
     }
     const niyet = niyetBul(c);
+    if (niyet === 'operator') return this._operator(say);
+    if (niyet === 'hizmetler') return this._hizmetListe(say);
     if (niyet === 'iptal') { this._resetSlots(); return this._iptalBaslat(c, say); }
     if (niyet === 'guncelle') { this._resetSlots(); return this._guncelleBaslat(c, say); }
     if (niyet === 'musaitlik') { this._resetSlots(); return this._musaitlikBaslat(c, say); }
@@ -279,19 +281,40 @@ class RulesEngine {
     this.state = 'niyet';
   }
 
-  /* -------- BORÇ / VADE SORGUSU -------- */
-  async _borcSorgula(say) {
-    if (!this.userId) { say('Sizi kayıtlarımızda bulamadığım için borç bilginize ulaşamıyorum. Başka bir işlem ister misiniz?'); this.state = 'niyet'; return; }
-    const r = await borcApi(this.salonId, this.userId);
-    let msg = String((r && r.message) || '').trim();
-    // Sesli asistan icin DTMF ("...tuşlayınız") ve "ana menüye yönlendiriyorum" kismini kirp.
-    msg = msg.replace(/\.?\s*(Ödemeyi bugün içinde[\s\S]*|Sizi tekrar ana menüye[\s\S]*)$/u, '').trim();
-    if (r && r.borc_var) {
-      say(`${msg}. Ödeme için işletmemizle iletişime geçebilirsiniz. Başka bir işlem ister misiniz?`);
-    } else {
-      say(`${msg || 'Vadesi geçmiş bir borcunuz görünmüyor'}. Başka bir işlem ister misiniz?`);
+  /* -------- OPERATÖRE / İŞLETMEYE BAĞLA -------- */
+  async _operator(say) {
+    say('Sizi ilgili birime aktarıyorum, lütfen hatta kalın.');
+    this.ctx.control = 'transfer'; // ari.js -> operator-bagla (continueInDialplan)
+  }
+
+  /* -------- HİZMET LİSTESİ -------- */
+  async _hizmetAdlari() {
+    const adlar = [];
+    for (const h of (this.ctx.hizmetler || [])) { const a = String(h.ad || h.hizmetAdi || '').trim(); if (a) adlar.push(a); }
+    if (!adlar.length) {
+      try {
+        const { data } = await axios.post(`${API}/hizmet_liste_getir/${encodeURIComponent(this.salonId)}`, {}, { timeout: 15000 });
+        const lst = (data && Array.isArray(data.data)) ? data.data : (Array.isArray(data) ? data : []);
+        for (const x of lst) { const a = String((x.hizmet_adi) || (x.hizmetler && x.hizmetler.hizmet_adi) || '').trim(); if (a) adlar.push(a); }
+      } catch (_) {}
     }
+    return [...new Set(adlar)]; // benzersiz, sira korunur
+  }
+
+  async _hizmetListe(say) {
+    const adlar = await this._hizmetAdlari();
+    if (!adlar.length) { say('Hizmet listemize şu an ulaşamadım. Hangi hizmet için randevu istersiniz?'); this.state = 'niyet'; return; }
+    const ilk = adlar.slice(0, 10);
+    const ek = adlar.length > ilk.length ? ' ve daha birçok hizmetimiz mevcut' : '';
+    say(`Hizmetlerimizden bazıları: ${ilk.join(', ')}${ek}. Hangisi için randevu oluşturmamı istersiniz?`);
     this.state = 'niyet';
+  }
+
+  /* -------- BORÇ / VADE SORGUSU -> İŞLETMEYE AKTAR -------- */
+  async _borcSorgula(say) {
+    // Borc/odeme bilgisi telefonda anons edilmez; bu bilgilendirme icin isletmeye aktarilir.
+    say('Borç ve ödeme bilgileriniz için sizi işletmemize aktarıyorum, lütfen hatta kalın.');
+    this.ctx.control = 'transfer';
   }
 
   /* -------- BOOKING -------- */
