@@ -156,9 +156,14 @@ class CallSession {
   async _applyControl(control) {
     if (this.finished) return;
     if (control === 'transfer') {
-      // Operatore aktar: mevcut IVR ile ayni hedef ([operator-bagla] veya from-queue).
+      // Operatore aktar: [operator-bagla] "Dial(Local/${operatorKanali}@from-queue)" okur.
+      // salonlar.operator_kanali (ctx.operatorKanali) kanal degiskeni olarak SET edilmeli;
+      // aksi halde queue no bos kalir ve dial basarisiz olur.
       const target = this.ctx.operatorKanali;
       try {
+        if (target != null && String(target) !== '') {
+          await this.channel.setChannelVar({ variable: 'operatorKanali', value: String(target) });
+        }
         await this.channel.continueInDialplan({ context: 'operator-bagla', extension: 's', priority: 1 });
       } catch (_) {
         if (target) { try { await this.channel.continueInDialplan({ context: 'from-queue', extension: String(target), priority: 1 }); } catch (__) {} }
