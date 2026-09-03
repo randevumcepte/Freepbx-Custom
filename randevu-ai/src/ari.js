@@ -156,6 +156,9 @@ class CallSession {
   async _applyControl(control) {
     if (this.finished) return;
     if (control === 'transfer') {
+      // ARAYANI KAPATMA: operator-bagla dialplan'da devam ediyor. StasisEnd de _cleanup'i
+      // tetikleyecegi icin bayrakla korunur; aksi halde arayan Dial'a varmadan hung up olur.
+      this._keepCaller = true;
       // Operatore aktar: [operator-bagla] "Dial(Local/${operatorKanali}@from-queue)" okur.
       // salonlar.operator_kanali (ctx.operatorKanali) kanal degiskeni olarak SET edilmeli;
       // aksi halde queue no bos kalir ve dial basarisiz olur.
@@ -179,7 +182,8 @@ class CallSession {
     if (this.stt) this.stt.end();
     try { if (this.extChannel) await this.extChannel.hangup(); } catch (_) {}
     try { if (this.bridge) await this.bridge.destroy(); } catch (_) {}
-    try { await this.channel.hangup(); } catch (_) {}
+    // Transfer'de arayan operator-bagla'da devam ediyor -> KAPATMA. Diger hallerde kapat.
+    if (!this._keepCaller) { try { await this.channel.hangup(); } catch (_) {} }
   }
 }
 
