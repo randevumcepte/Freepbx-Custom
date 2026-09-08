@@ -321,7 +321,7 @@ class RulesEngine {
   async _bookingIlerle(say) {
     const s = this.slots;
     if (s.hizmetId === null || s.hizmetId === '') { this.state = 'b_hizmet'; say(s.personelAdi ? `${s.personelAdi} isimli personel için hangi hizmet?` : 'Hangi hizmet için randevu oluşturalım?'); return; }
-    if (s.personelId === null) { this.state = 'b_personel'; say(s.hizmetAdi ? `${s.hizmetAdi} için hangi personelden randevu istersiniz?` : 'Hangi personelden randevu istersiniz?'); return; }
+    // PERSONEL OPSIYONEL: soylenmediyse SORMA -> musaitlikte online randevu gibi otomatik atanir.
     if (s.tarih === null && s.vakit === null) { this.state = 'b_tarih'; say('Randevu hangi gün olsun?'); return; }
     if (s.saat === null && s.vakit === null) { this.state = 'b_saat'; say('Saat kaçta olsun? İsterseniz en uygun saati ben ayarlayabilirim.'); return; }
     // Musteri = arayan; yoksa yeni musteri
@@ -358,7 +358,17 @@ class RulesEngine {
   async _musaitlikVeOnay(say) {
     const s = this.slots;
     say('Uygunluk aranıyor, sizi biraz bekleteceğim efendim.');
-    const m = await musaitlikApi(this.salonId, s.personelId, s.hizmetId, s.tarih, s.saat, s.vakit);
+    let m;
+    if (s.personelId == null || s.personelId === '') {
+      // Personel belirtilmemis -> ONLINE RANDEVU gibi OTOMATIK ata: hizmeti veren personeller
+      // (yoksa herhangi biri) icinde istenen zamana en yakin slotu bulan personel secilir.
+      const best = await this._hizmeteEnYakinPersonel(s);
+      if (!best) { say('Belirttiğiniz zaman için müsait bir personel bulamadım. Başka bir işlem ister misiniz?'); this.state = 'niyet'; this._resetSlots(); return; }
+      s.personelId = best.pid; s.personelAdi = best.ad;
+      m = { bulundu: true, tarih: best.tarih, saat: best.saat, tam_istek: best.tam_istek };
+    } else {
+      m = await musaitlikApi(this.salonId, s.personelId, s.hizmetId, s.tarih, s.saat, s.vakit);
+    }
     if (!m || m.bulundu !== true) {
       say(m && m.calisma_yok ? 'Bu personelin randevu takvimi açık değil. Başka bir zaman için tekrar deneyin.' : 'Belirttiğiniz tarihlerde müsait bir saat bulamadım. Başka bir işlem ister misiniz?');
       this.state = 'niyet'; this._resetSlots(); return;
@@ -367,6 +377,26 @@ class RulesEngine {
     const psz = (s.personelAdi ? `${s.personelAdi} isimli personel` : 'seçtiğiniz personel');
     say(`${s.hizmetAdi}, ${psz}, ${zamanSozlu(s.tarih, s.saat)}. Onaylıyor musunuz?`);
     this.state = 'b_onay';
+  }
+
+  /** Personel belirtilmemis: hizmeti veren personeller (yoksa TUMU) icinde istenen zamana EN YAKIN slotu bulan personeli sec (online randevu mantigi). */
+  async _hizmeteEnYakinPersonel(s) {
+    const adMap = await this._personelAdlari();
+    let ids = [];
+    const hz = (this.ctx.hizmetler || []).find((h) => fold(h.ad || '') === fold(s.hizmetAdi || ''));
+    if (hz && Array.isArray(hz.personeller) && hz.personeller.length) ids = hz.personeller.map((p) => String(p.id)).filter(Boolean);
+    if (!ids.length) ids = [...adMap.keys()]; // hizmete atanmis personel YOK -> herhangi biri
+    ids = [...new Set(ids)].slice(0, 8);
+    if (!ids.length) return null;
+    const res = await Promise.all(ids.map(async (pid) => ({ pid, m: await musaitlikApi(this.salonId, pid, s.hizmetId, s.tarih, s.saat, s.vakit) })));
+    let best = null;
+    for (const r of res) {
+      if (r.m && r.m.bulundu === true) {
+        const score = (r.m.tam_istek ? '0' : '1') + String(r.m.tarih) + (r.m.saat || ''); // tam istek > en erken
+        if (!best || score < best.score) best = { score, pid: r.pid, ad: (adMap.get(String(r.pid)) || '').trim(), tarih: r.m.tarih, saat: r.m.saat, tam_istek: r.m.tam_istek === true };
+      }
+    }
+    return best;
   }
 
   async _bookingOnay(c, say) {
