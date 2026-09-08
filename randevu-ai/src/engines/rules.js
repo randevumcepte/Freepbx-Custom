@@ -100,6 +100,12 @@ async function iptalApi(randevuId) {
     return data || {};
   } catch (_) { return { hata: 'baglanti' }; }
 }
+async function yolTarifiApi(salonId, userId, callerId) {
+  try {
+    const { data } = await axios.post(`${API}/yolTarifiGonder`, { salonid: salonId, userid: userId, cep_telefon: callerId || '' }, { headers: { 'Content-Type': 'application/json' }, timeout: 20000 });
+    return !!(data && data.success);
+  } catch (_) { return false; }
+}
 async function borcApi(salonId, userId) {
   try {
     const { data } = await axios.post(`${API}/alacakKontrol`, { salon_id: salonId, user_id: userId }, { headers: { 'Content-Type': 'application/json' }, timeout: 20000 });
@@ -303,10 +309,14 @@ class RulesEngine {
     this.ctx.control = 'transfer'; // ari.js -> operator-bagla (continueInDialplan)
   }
 
-  /* -------- ADRES / YOL TARİFİ -> [yol-tarifi] extension -------- */
+  /* -------- ADRES / YOL TARİFİ (diger akislar gibi: gonder + "baska islem?") -------- */
   async _yolTarifi(say) {
-    say('Adres ve yol tarifi bilgisini size mesaj olarak iletiyorum, lütfen hatta kalın.');
-    this.ctx.control = 'yoltarifi'; // ari.js -> yol-tarifi (salonid/userId kanal degiskeniyle)
+    say('Yol tarifi bilgisini size mesaj olarak iletiyorum.');
+    const ok = this.dryRun ? true : await yolTarifiApi(this.salonId, this.userId, this.ctx.callerId);
+    say(ok
+      ? 'Yol tarifini gönderdim. Başka bir işlem ister misiniz?'
+      : 'Yol tarifini şu an iletemedim. Başka bir işlem ister misiniz?');
+    this.state = 'niyet';
   }
 
   /* -------- HİZMET LİSTESİ -------- */
