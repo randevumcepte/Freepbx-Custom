@@ -1,0 +1,49 @@
+{
+  "_aciklama": "EGITILEBILIR NIYET SOZLUGU (uygulamadaki SesliRandevuCozService yontemi: fold + es-anlamli + fuzzy, niyet katmanina uyarlandi). YENI VARYASYON CIKARSA ilgili niyetin 'kelimeler' dizisine 1 satir ekle -> kod/deploy YOK (dosya her cagride okunur). ESLESME KURALI: bir 'kelime' TEK sozcukse, cumledeki bir sozcuk onunla ayni (es-anlamli) VEYA o sozcukle BASLIYORsa (yonlu onek, Turkce ek toleransi) eslesir. COK sozcukluyse TUM sozcukleri (ayni toleransla) cumlede gecmeli. SIRA ONEMLI: ustteki niyet oncelikli. 'gerekli': cumlede bu koklerden biri de bulunmali. 'haric': bu koklerden biri varsa niyet elenir.",
+
+  "esAnlamli": {
+    "bilgilendirme": "bilgi", "bilgilendirmesi": "bilgi", "bilgilendir": "bilgi", "bilgilerimi": "bilgi", "bilgilerini": "bilgi", "bilgisi": "bilgi",
+    "yetkiliye": "yetkili", "yetkiliyle": "yetkili",
+    "operatore": "operator", "operatoru": "operator", "operatorle": "operator",
+    "temsilciye": "temsilci", "temsilciyle": "temsilci",
+    "adresiniz": "adres", "adresi": "adres", "adresinizi": "adres",
+    "konumunuz": "konum", "konumu": "konum", "konumunuzu": "konum"
+  },
+
+  "niyetler": [
+    {
+      "ad": "iptal",
+      "kelimeler": ["iptal", "vazgec", "vazgectim", "gelemeyecegim", "gelemem", "iptal et"]
+    },
+    {
+      "ad": "guncelle",
+      "kelimeler": ["guncelle", "degistir", "ertele", "tasi", "one al", "ileri al", "saatini degistir", "tarihini degistir", "yerine", "baska gune", "baska saate"]
+    },
+    {
+      "ad": "yoltarifi",
+      "kelimeler": ["adres", "yol tarif", "yolu tarif", "konum", "harita", "nasil gid", "nasil gel", "nasil ula", "nasil gelir", "nasil gelebil", "nere", "nerde", "hangi semt", "hangi mahalle", "hangi cadde", "hangi sokak", "tarif eder"]
+    },
+    {
+      "ad": "operator",
+      "kelimeler": ["operator", "yetkili", "temsilci", "canli destek", "musteri hizmet", "isletme bagla", "salon bagla", "isletme gorus", "salon gorus", "isletme konus", "salon konus", "birine bagla", "biri gorus", "insana bagla", "santral bagla", "baglanmak", "beni bagla", "beni aktar", "birine aktar", "yetkili gorus", "yetkili konus"]
+    },
+    {
+      "ad": "hizmetler",
+      "haric": ["randevu"],
+      "kelimeler": ["hangi hizmet", "hizmet neler", "hizmet nedir", "hizmet var", "hizmet veriyor", "hizmet sunuyor", "hizmet mevcut", "hizmet listesi", "neler yapiyor", "neler yapabiliyor", "ne is yap", "hizmetleriniz"]
+    },
+    {
+      "ad": "musaitlik",
+      "kelimeler": ["musait", "bosluk", "bos yer", "bos mu", "dolu mu", "yer var", "uygun mu", "uygunluk", "ne zaman bos", "bos zaman", "acik saat"]
+    },
+    {
+      "ad": "borc",
+      "kelimeler": ["borc", "vade", "vadesi", "taksit", "senet", "odemem", "odeme var", "ne kadar borc", "ne kadar odeme", "kalan odeme", "alacak", "bakiyem"]
+    },
+    {
+      "ad": "sorgula",
+      "gerekli": ["randevu"],
+      "kelimeler": ["randevu var", "randevu ne zaman", "randevu ogren", "randevu sorgula", "randevu kontrol", "randevu hangi gun", "randevu bakar", "randevu goster", "randevu goreyim", "randevu bilgi", "en yakin randevu", "yaklasan randevu", "randevu durum", "randevu ne zamana", "randevu hatirlat", "randevum"]
+    }
+  ]
+}

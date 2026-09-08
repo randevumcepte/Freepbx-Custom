@@ -129,27 +129,86 @@ function saatSozcukleriniRakama(metin, saatCevabi = false) {
   return res.join(' ').trim();
 }
 
-/** Niyet: iptal | guncelle | musaitlik | sorgula | al (varsayilan). */
+/* ------------------------------------------------------------------ *
+ * NIYET — EGITILEBILIR SOZLUK + FUZZY (uygulamadaki SesliRandevuCozService
+ * yontemi: fold + es-anlamli + benzerlik). Kurallar KODDA degil src/intents.json'da;
+ * yeni varyasyon = dosyaya 1 satir (deploy yok, dosya her cagride okunur).
+ * ------------------------------------------------------------------ */
+const path = require('path');
+const INTENTS_PATH = path.join(__dirname, 'intents.json');
+
+/** intents.json'u her cagride taze oku (canliyken duzenlenince aninda etki eder). */
+function _intentsYukle() {
+  try {
+    delete require.cache[require.resolve(INTENTS_PATH)];
+    return require(INTENTS_PATH);
+  } catch (e) {
+    return { esAnlamli: {}, niyetler: [] };
+  }
+}
+
+/** Levenshtein tabanli 0..1 benzerlik (PHP similar_text muadili, typo/STT toleransi). */
+function _benzerlik(a, b) {
+  a = String(a); b = String(b);
+  if (a === b) return 1;
+  const m = a.length, n = b.length;
+  if (!m || !n) return 0;
+  const d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const c = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c);
+    }
+  }
+  return 1 - d[m][n] / Math.max(m, n);
+}
+
+/** Eş-anlamlı sözlükten kanonik forma indir (yoksa aynen döner). */
+function _kanonik(w, esAnlamli) { return (esAnlamli && esAnlamli[w]) || w; }
+
+/**
+ * Tek trigger sözcüğü (fold+kanonik) cümledeki bir sözcükle eşleşiyor mu?
+ *  1) kanonik birebir aynı
+ *  2) YÖNLÜ ÖNEK: cümle sözcüğü trigger ile başlıyor (Türkçe ek: adres->adresiniz),
+ *     trigger >=4 harf — "randevu" trigger'ı "randevu almak"a takılsın diye DEĞİL,
+ *     tersine trigger "randevum" iken "randevu"ya UYMAZ (iyelik ayrımı korunur).
+ *  3) FUZZY (>=0.84, ikisi de >=5 harf): typo/STT sapmasi.
+ */
+function _sozcukUyar(trigger, kelime, esAnlamli) {
+  const t = _kanonik(trigger, esAnlamli);
+  const k = _kanonik(kelime, esAnlamli);
+  if (t === k) return true;
+  // Yönlü önek: cümle sözcüğü trigger ile başlıyor (adres->adresiniz, yer->yeriniz).
+  if (t.length >= 3 && k.startsWith(t)) return true;
+  // Fuzzy typo/STT — ama girdi trigger'ın KÖKÜ/ÖNEKİ ise UYGULAMA (generic "randevu",
+  // iyelik "randevum" trigger'ına eşleşmesin diye): t "randevum" iken k "randevu" -> hayır.
+  if (t.length >= 5 && k.length >= 5 && !t.startsWith(k) && _benzerlik(t, k) >= 0.84) return true;
+  return false;
+}
+
+/** "ifade" (tek/çok sözcük) cümledeki sözcüklere karşı eşleşiyor mu (TÜM sözcükleri geçmeli)? */
+function _ifadeUyar(ifade, kelimeler, esAnlamli) {
+  const parcalar = fold(ifade).split(/\s+/).filter(Boolean);
+  if (!parcalar.length) return false;
+  return parcalar.every((p) => kelimeler.some((k) => _sozcukUyar(p, k, esAnlamli)));
+}
+
+/** Cümlede verilen köklerden (gerekli/haric) biri geçiyor mu? */
+function _kokVar(kokler, kelimeler, esAnlamli) {
+  return (kokler || []).some((kok) => kelimeler.some((k) => _sozcukUyar(kok, k, esAnlamli)));
+}
+
+/** Niyet: intents.json'daki SIRAYLA ilk eşleşen; hiçbiri değilse 'al' (randevu al — varsayılan). */
 function niyetBul(metin) {
-  const c = fold(metin);
-  if (c.indexOf('iptal') !== -1) return 'iptal';
-  if (/guncelle|degistir|ertele|tasi|one al|ileri al|saatini|tarihini|yerine/.test(c)) return 'guncelle';
-  // Adres / yol tarifi -> [yol-tarifi] extension (isletmeye DEGIL). "adresiniz nerede",
-  // "nasil gelirim", "yol tarifi", "konumunuz", "neredesiniz" ...
-  if (/adres|yol tarif|yolu tarif|konum|harita|nasil gid|nasil gel|nasil ula|nasil gelir|nasil gelebil|\bnere|\bnerde|hangi semt|hangi mahalle|hangi cadde/.test(c)) return 'yoltarifi';
-  // Operatore/isletmeye/salona baglanma — "salon ile gorusmek", "isletmeye baglar misiniz",
-  // "yetkiliyle konusmak", "birine baglar misiniz" ...
-  if (/operator|yetkili|temsilci|canli destek/.test(c)
-      || /(isletme|salon|biri|birisi|birine|birileri|insan|santral|kimse)[a-z ]*(bagla|aktar|gorus|konus)/.test(c)
-      || /baglar mis|baglanmak istiyorum|baglayabilir|beni bagla|aktarir mis/.test(c)) return 'operator';
-  // Hizmet LISTESI sorgusu ("hangi hizmetleri veriyorsunuz", "hizmetleriniz neler") — randevu DEGIL.
-  if (!/randevu/.test(c) && (/hangi hizmet.*(var|veriy|yapiyor|sunuyor|mevcut)|hizmetler.*(neler|nedir|var)|hizmetleriniz|ne.*hizmet.*(var|veriy)|hizmet listesi|neler yap(iyor|abiliyor)/.test(c))) return 'hizmetler';
-  if (/musait|musaitlik|bosluk|bos yer|bos mu|dolu mu|yer var|uygun mu|uygunluk|ne zaman bos/.test(c)) return 'musaitlik';
-  // Borc/vade sorgusu (sorgula'dan ONCE: "borcum var mi" -> borc, "randevum var mi" -> sorgula)
-  if (/borc|borcum|vade|vadesi|taksit|senet|odemem|odeme.*var|ne kadar.*(borc|odeme|param)|alacag/.test(c)) return 'borc';
-  // Randevu SORGUSU — yalniz RANDEVU baglaminda ("randevum var mi", "randevu ne zaman").
-  // Boylece "kampanya var mi" gibi randevu-disi sorular sorgula'ya dusmez (aktarima gider).
-  if (/randevum\b/.test(c) || (/randevu/.test(c) && /(var mi|ne zaman|ogren|sorgula|kontrol|hangi gun|bakar mis|goster|goreyim|gorayim|bilgi|bilgilendir|en yakin|yaklasan|durumu|ne zamana|hatirlat)/.test(c))) return 'sorgula';
+  const { esAnlamli, niyetler } = _intentsYukle();
+  const kelimeler = fold(metin).split(/\s+/).filter(Boolean);
+  if (!kelimeler.length) return 'al';
+  for (const n of (niyetler || [])) {
+    if (n.haric && _kokVar(n.haric, kelimeler, esAnlamli)) continue;
+    if (n.gerekli && !_kokVar(n.gerekli, kelimeler, esAnlamli)) continue;
+    if ((n.kelimeler || []).some((ifade) => _ifadeUyar(ifade, kelimeler, esAnlamli))) return n.ad;
+  }
   return 'al';
 }
 
