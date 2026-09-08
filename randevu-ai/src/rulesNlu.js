@@ -149,7 +149,7 @@ function niyetBul(metin) {
   if (/borc|borcum|vade|vadesi|taksit|senet|odemem|odeme.*var|ne kadar.*(borc|odeme|param)|alacag/.test(c)) return 'borc';
   // Randevu SORGUSU — yalniz RANDEVU baglaminda ("randevum var mi", "randevu ne zaman").
   // Boylece "kampanya var mi" gibi randevu-disi sorular sorgula'ya dusmez (aktarima gider).
-  if (/randevum\b/.test(c) || (/randevu/.test(c) && /(var mi|ne zaman|ogren|sorgula|kontrol|hangi gun|bakar mis|goster|goreyim|gorayim)/.test(c))) return 'sorgula';
+  if (/randevum\b/.test(c) || (/randevu/.test(c) && /(var mi|ne zaman|ogren|sorgula|kontrol|hangi gun|bakar mis|goster|goreyim|gorayim|bilgi|bilgilendir|en yakin|yaklasan|durumu|ne zamana|hatirlat)/.test(c))) return 'sorgula';
   return 'al';
 }
 

@@ -303,7 +303,7 @@ class RulesEngine {
     let liste = this.ctx.enYakinRandevu && this.ctx.enYakinRandevu.length ? this.ctx.enYakinRandevu.map((r) => ({ id: r.randevuId, tarih: r.tarih, saat: r.saat, durum: '1', hizmetler: r.hizmetler })) : null;
     if (!liste) liste = await musteriRandevulariApi(this.salonId, this.userId);
     const aktif = aktifRandevular(liste);
-    if (!aktif.length) { say('Yaklaşan bir randevunuz görünmüyor.'); this.state = 'niyet'; return; }
+    if (!aktif.length) { say('Yakın zaman için bir randevunuz bulunmamaktadır. Başka bir işlem ister misiniz?'); this.state = 'niyet'; return; }
     const ilk = aktif[0];
     const ek = aktif.length > 1 ? ` Ayrıca ${aktif.length - 1} randevunuz daha bulunuyor.` : '';
     // Detayi sesli tek tek okumak yerine bilgilendirme MESAJI gonderiyoruz (WA-first, kontorsuz).
