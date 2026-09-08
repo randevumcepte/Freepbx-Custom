@@ -170,7 +170,7 @@ class RulesEngine {
   }
 
   _resetSlots() {
-    this.slots = { hizmetId: null, hizmetAdi: null, hizmetFiyat: '0', hizmetSure: '30', personelId: null, personelAdi: null, tarih: null, saat: null, vakit: null, randevuId: '', guncelleme: false };
+    this.slots = { hizmetId: null, hizmetAdi: null, hizmetFiyat: '0', hizmetSure: '30', personelId: null, personelAdi: null, tarih: null, saat: null, vakit: null, saatOto: false, randevuId: '', guncelleme: false };
     this.hedefRandevu = null;   // iptal/guncelle icin secilen randevu
     this.yeniAd = null;         // yeni musteri
     this._hizmetDeneme = 0;     // hizmet bulunamadi deneme sayaci
@@ -365,7 +365,7 @@ class RulesEngine {
     if (s.hizmetId === null || s.hizmetId === '') { this.state = 'b_hizmet'; say(s.personelAdi ? `${s.personelAdi} isimli personel için hangi hizmet?` : 'Hangi hizmet için randevu oluşturalım?'); return; }
     // PERSONEL OPSIYONEL: soylenmediyse SORMA -> musaitlikte online randevu gibi otomatik atanir.
     if (s.tarih === null && s.vakit === null) { this.state = 'b_tarih'; say('Randevu hangi gün olsun?'); return; }
-    if (s.saat === null && s.vakit === null) { this.state = 'b_saat'; say('Saat kaçta olsun? İsterseniz en uygun saati ben ayarlayabilirim.'); return; }
+    if (s.saat === null && s.vakit === null && !s.saatOto) { this.state = 'b_saat'; say('Saat kaçta olsun? İsterseniz en uygun saati ben ayarlayabilirim.'); return; }
     // Musteri = arayan; yoksa yeni musteri
     if (!this.userId) { this.state = 'b_yeni_ad'; say('Sizi kayıtlarımızda bulamadım. Lütfen adınızı ve soyadınızı söyleyin.'); return; }
     return this._musaitlikVeOnay(say);
@@ -373,10 +373,14 @@ class RulesEngine {
 
   async _booking(c, say) {
     const saatCevabi = this.state === 'b_saat';
-    if (this.state === 'b_saat' && /farketmez|fark etmez|sen ayarla|en yakin|ne uygunsa|uygun olan|onemli degil/.test(fold(c))) {
-      // saat bos kalsin -> musaitlik en yakini bulur
-    } else {
-      this._uygula(await cozApi(this.salonId, c, saatCevabi));
+    this._uygula(await cozApi(this.salonId, c, saatCevabi));
+    // SAAT DELEGE: musteri saat vermeyip "farketmez / en uygun / siz ayarlayin" derse VEYA
+    // "en uygun saati ben ayarlayabilirim" teklifine "evet/olur" derse -> otomatik en yakin slot.
+    // (saatOto olmadan _bookingIlerle saati bos gorup tekrar sorardi -> DONGU.)
+    if (this.state === 'b_saat' && this.slots.saat === null && this.slots.vakit === null) {
+      const f = fold(c);
+      const delege = /farketmez|fark etmez|farketmiyor|fark etmiyor|sen ayarla|siz ayarla|sen belirle|siz belirle|siz karar|siz sec|en yakin|en erken|en uygun|ilk bos|bos olan|musait olan|ne uygunsa|uygunsa|uygun olan|uygun olani|uygun bir|onemli degil|ne olursa|ne zaman olursa|nezaman olursa|size kalmis|sana kalmis|hepsi olur|hepsi uygun/.test(f);
+      if (delege || olumluMu(c)) this.slots.saatOto = true;
     }
     // HIZMET cevabinda eslesme yoksa: "Maalesef X hizmetini veremiyoruz" (jenerik tekrar degil).
     if (this.state === 'b_hizmet' && (this.slots.hizmetId === null || this.slots.hizmetId === '') && c.trim() !== '') {
