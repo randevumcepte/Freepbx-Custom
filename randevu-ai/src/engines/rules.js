@@ -264,9 +264,21 @@ class RulesEngine {
     if (niyet === 'musaitlik') { this._resetSlots(); return this._musaitlikBaslat(c, say); }
     if (niyet === 'sorgula') return this._sorgula(say);
     if (niyet === 'borc') return this._borcSorgula(say);
-    // 'al' -> randevu
+    // 'al' (varsayilan): salt selamlasma -> yeniden sor (aktarma yok). ('f' yukarida tanimli)
+    if (/^(merhaba|selam|alo|gunaydin|iyi gunler|iyi aksamlar|efendim|buyurun|buyrun)[\s.!,]*$/.test(f.trim())) {
+      say('Size nasıl yardımcı olabilirim? Randevu alabilir, öğrenebilir ya da iptal edebilirsiniz.'); return;
+    }
     this._resetSlots();
     this._uygula(await cozApi(this.salonId, c));
+    // RANDEVU SINYALI: coz'dan alan geldi mi ya da randevu/hizmet anahtar kelimesi var mi?
+    const randevuSinyali = this.slots.hizmetId || this.slots.tarih || this.slots.saat || this.slots.personelId
+      || /randevu|rezervasyon|hizmet|saat|gun|tarih|personel|kesim|kestir|boya|bakim|epilasyon|manikur|pedikur|masaj|fon|makyaj|kas|kirpik|cilt|tirnak|agda|sac|dovme|kaynak|rofle|gelin|topuz|perma|keratin|botoks|dolgu|lazer/.test(f);
+    if (!randevuSinyali) {
+      // Randevu DISI talep -> isletmeye aktar (operator-bagla).
+      say('Talebiniz için sizi işletmemize aktarıyorum, lütfen hatta kalın.');
+      this.ctx.control = 'transfer';
+      return;
+    }
     return this._bookingIlerle(say);
   }
 
