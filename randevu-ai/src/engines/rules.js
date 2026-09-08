@@ -106,6 +106,14 @@ async function yolTarifiApi(salonId, userId, callerId) {
     return !!(data && data.success);
   } catch (_) { return false; }
 }
+
+// Randevu bilgilendirme mesaji (en yakin gelecek randevu) — WA-first, KONTORSUZ (randevu_bilgi).
+async function randevuBilgiApi(salonId, userId, callerId) {
+  try {
+    const { data } = await axios.post(`${API}/randevuBilgiGonder`, { salonid: salonId, userid: userId, cep_telefon: callerId || '' }, { headers: { 'Content-Type': 'application/json' }, timeout: 20000 });
+    return !!(data && data.success);
+  } catch (_) { return false; }
+}
 async function borcApi(salonId, userId) {
   try {
     const { data } = await axios.post(`${API}/alacakKontrol`, { salon_id: salonId, user_id: userId }, { headers: { 'Content-Type': 'application/json' }, timeout: 20000 });
@@ -297,9 +305,11 @@ class RulesEngine {
     const aktif = aktifRandevular(liste);
     if (!aktif.length) { say('Yaklaşan bir randevunuz görünmüyor.'); this.state = 'niyet'; return; }
     const ilk = aktif[0];
-    const ad = randevuHizmetAdi(ilk);
     const ek = aktif.length > 1 ? ` Ayrıca ${aktif.length - 1} randevunuz daha bulunuyor.` : '';
-    say(`En yakın randevunuz ${zamanSozlu(ilk.tarih, ilk.saat)}${ad ? ', ' + ad : ''}.${ek} Başka bir işlem ister misiniz?`);
+    // Detayi sesli tek tek okumak yerine bilgilendirme MESAJI gonderiyoruz (WA-first, kontorsuz).
+    say(`En yakın randevunuz ${zamanSozlu(ilk.tarih, ilk.saat)}.${ek} Randevu bilgilerinizi mesaj olarak iletiyorum.`);
+    const ok = this.dryRun ? true : await randevuBilgiApi(this.salonId, this.userId, this.ctx.callerId);
+    say(ok ? 'Randevu bilgilerinizi gönderdim. Başka bir işlem ister misiniz?' : 'Randevu bilgilerinizi şu an iletemedim. Başka bir işlem ister misiniz?');
     this.state = 'niyet';
   }
 
