@@ -171,6 +171,15 @@ class CallSession {
       } catch (_) {
         if (target) { try { await this.channel.continueInDialplan({ context: 'from-queue', extension: String(target), priority: 1 }); } catch (__) {} }
       }
+    } else if (control === 'yoltarifi') {
+      // Adres/yol tarifi -> [yol-tarifi] AGI(yoltarifigonder.php,${salonid},${userId}).
+      // salonid/userId kanal degiskenleri SET edilmeli (arayan operator-bagla gibi hatta kalir).
+      this._keepCaller = true;
+      try {
+        await this.channel.setChannelVar({ variable: 'salonid', value: String(this.ctx.salonId || '') });
+        await this.channel.setChannelVar({ variable: 'userId', value: String(this.ctx.userId || '') });
+        await this.channel.continueInDialplan({ context: 'yol-tarifi', extension: 's', priority: 1 });
+      } catch (_) {}
     }
     await this._cleanup();
   }

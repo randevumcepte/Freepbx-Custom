@@ -134,6 +134,9 @@ function niyetBul(metin) {
   const c = fold(metin);
   if (c.indexOf('iptal') !== -1) return 'iptal';
   if (/guncelle|degistir|ertele|tasi|one al|ileri al|saatini|tarihini|yerine/.test(c)) return 'guncelle';
+  // Adres / yol tarifi -> [yol-tarifi] extension (isletmeye DEGIL). "adresiniz nerede",
+  // "nasil gelirim", "yol tarifi", "konumunuz", "neredesiniz" ...
+  if (/adres|yol tarif|yolu tarif|konum|nasil gid|nasil gel|nasil ula|nasil gelir|neredesiniz|nerdesiniz|nerede.*(siz|isletme|salon)|haritada|harita/.test(c)) return 'yoltarifi';
   // Operatore/isletmeye/salona baglanma — "salon ile gorusmek", "isletmeye baglar misiniz",
   // "yetkiliyle konusmak", "birine baglar misiniz" ...
   if (/operator|yetkili|temsilci|canli destek/.test(c)

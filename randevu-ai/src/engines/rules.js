@@ -257,6 +257,7 @@ class RulesEngine {
       return;
     }
     const niyet = niyetBul(c);
+    if (niyet === 'yoltarifi') return this._yolTarifi(say);
     if (niyet === 'operator') return this._operator(say);
     if (niyet === 'hizmetler') return this._hizmetListe(say);
     if (niyet === 'iptal') { this._resetSlots(); return this._iptalBaslat(c, say); }
@@ -300,6 +301,12 @@ class RulesEngine {
   async _operator(say) {
     say('Sizi ilgili birime aktarıyorum, lütfen hatta kalın.');
     this.ctx.control = 'transfer'; // ari.js -> operator-bagla (continueInDialplan)
+  }
+
+  /* -------- ADRES / YOL TARİFİ -> [yol-tarifi] extension -------- */
+  async _yolTarifi(say) {
+    say('Adres ve yol tarifi bilgisini size mesaj olarak iletiyorum, lütfen hatta kalın.');
+    this.ctx.control = 'yoltarifi'; // ari.js -> yol-tarifi (salonid/userId kanal degiskeniyle)
   }
 
   /* -------- HİZMET LİSTESİ -------- */
