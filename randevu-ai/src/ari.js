@@ -178,7 +178,8 @@ class CallSession {
       try {
         await this.channel.setChannelVar({ variable: 'salonid', value: String(this.ctx.salonId || '') });
         await this.channel.setChannelVar({ variable: 'userId', value: String(this.ctx.userId || '') });
-        await this.channel.continueInDialplan({ context: 'yol-tarifi', extension: 's', priority: 1 });
+        // AI'ya ozel context: Google TTS + bitince sesli-asistan'a geri doner.
+        await this.channel.continueInDialplan({ context: 'yol-tarifi-ai', extension: 's', priority: 1 });
       } catch (_) {}
     }
     await this._cleanup();
