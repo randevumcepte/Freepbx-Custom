@@ -39,13 +39,18 @@ class Dialog {
   opening(onSentence) {
     // Karsilama: manuel from-trunk-custom ile AYNI -> API'nin dondurdugu kisisel metni kullan
     // ("Sayın X, <salon karşılama telaffuzu> hoşgeldiniz"). Yoksa jenerik. LLM beklemez.
-    let t = this.ctx.karsilamaMetni
+    const base = this.ctx.karsilamaMetni
       ? (String(this.ctx.karsilamaMetni).trim().replace(/\s+/g, ' ') + ' ')
       : `Merhaba, ${this.ctx.salonAdi || 'salonumuz'} randevu asistanına hoş geldiniz. `;
-    if (this.ctx.paket && this.ctx.paket.bekleyenSeans) {
-      t += `${this.ctx.paket.paketAdi} paketinizden randevu oluşturmamı ister misiniz, yoksa başka bir işlem mi yapalım?`;
+    let t;
+    if (!this.ctx.userId) {
+      // Kayitsiz arayan (users/musteri_portfoy'da aktif kayit yok): ONCE ad-soyad al -> kaydet.
+      // Engine kayit_ad durumunda; ilk cevap isim olarak islenir, sonra "nasil yardimci".
+      t = base + 'Size yardımcı olabilmem için adınızı ve soyadınızı öğrenebilir miyim?';
+    } else if (this.ctx.paket && this.ctx.paket.bekleyenSeans) {
+      t = base + `${this.ctx.paket.paketAdi} paketinizden randevu oluşturmamı ister misiniz, yoksa başka bir işlem mi yapalım?`;
     } else {
-      t += `Randevu almak, ertelemek veya iptal etmek için nasıl yardımcı olabilirim?`;
+      t = base + `Randevu almak, ertelemek veya iptal etmek için nasıl yardımcı olabilirim?`;
     }
     if (onSentence) onSentence(t);
     return Promise.resolve({ text: t, control: null });

@@ -146,7 +146,9 @@ class RulesEngine {
     this.callerId = this.ctx.callerId || this.ctx.callerid || '';
     // Paket akisi ekip arkadaşinin test edilmis tool'larini kullanir (dogru uclar + paketBilgi).
     this.executeTool = executeTool || (async () => ({ toModel: '', isError: true }));
-    this.state = 'niyet';
+    // Kayitsiz arayan (musteri_portfoy aktif=1 yok / users kaydi yok -> ctx.userId bos):
+    // ONCE ad-soyad alinip kaydedilir, sonra "nasil yardimci" akisi. (Karsilama da ismi sorar.)
+    this.state = this.userId ? 'niyet' : 'kayit_ad';
     this.kufurSay = 0;
     this._ilkTur = true; // karsilamadaki paket teklifine "evet" -> paket akisi
     this.dryRun = !!(this.ctx && this.ctx.dryRun); // test: gercek olustur/iptal/kayit YAPMA
@@ -224,6 +226,7 @@ class RulesEngine {
       case 'b_hizmet': case 'b_personel': case 'b_tarih': case 'b_saat': return this._booking(c, say);
       case 'b_onay': return this._bookingOnay(c, say);
       case 'b_cakisma': return this._cakismaOnay(c, say);
+      case 'kayit_ad': return this._kayitAd(c, say);
       case 'b_yeni_ad': return this._yeniAd(c, say);
       case 'b_yeni_tel': return this._yeniTel(c, say);
       case 'c_tarih': return this._iptalTarih(c, say);
@@ -449,6 +452,24 @@ class RulesEngine {
   }
 
   /* -------- YENI MUSTERI -------- */
+  /* -------- KAYITSIZ ARAYAN: BASTA AD-SOYAD ALIP KAYDET -------- */
+  async _kayitAd(c, say) {
+    const ad = isimTemizle(c);
+    if (ad.length < 2) { say('Adınızı tam anlayamadım. Ad ve soyadınızı tekrar söyler misiniz?'); return; } // kayit_ad'da kal
+    // CallerID'yi telefon olarak normalize et (90xxxxxxxxxx / 5xxxxxxxxx -> 05xxxxxxxxx)
+    let tel = String(this.callerId || '').replace(/[^0-9]/g, '');
+    if (tel.length === 12 && tel.startsWith('90')) tel = '0' + tel.slice(2);
+    if (tel.length === 10 && tel.startsWith('5')) tel = '0' + tel;
+    if (tel && /^0\d{10}$/.test(tel)) {
+      const r = this.dryRun ? { userId: '999999' } : await yeniMusteriApi(this.salonId, ad, tel);
+      if (r && r.userId) { this.userId = String(r.userId); this.ctx.musteriAdi = ad; say(`Teşekkürler ${ad}, kaydınızı oluşturdum. Size nasıl yardımcı olabilirim?`); this.state = 'niyet'; return; }
+    }
+    // Numara gizli / kayit basarisiz -> yine de devam (randevuda gerekirse tekrar sorulur)
+    this.ctx.musteriAdi = ad;
+    say(`Teşekkürler ${ad}. Size nasıl yardımcı olabilirim?`);
+    this.state = 'niyet';
+  }
+
   async _yeniAd(c, say) {
     const ad = isimTemizle(c);
     if (ad.length < 2) { say('Anlayamadım, adınızı tekrar söyler misiniz?'); return; }
