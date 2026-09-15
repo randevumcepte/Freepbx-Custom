@@ -46,6 +46,12 @@ if ($decoded !== false && $decoded !== '' && base64_encode($decoded) === $rawArg
     $text = $rawArg;
 }
 
+// Okunus on-islemesi: BUYUK harf kelimeleri/markalari bas-harfi-buyuk forma cevir
+// ("ORBEY" -> "Orbey") ki TTS harf harf okumasin. sesli-asistan.php seslendirmeMetni()
+// ve randevu-ai/src/tts.js capsFix() ile AYNI mantik; sunucu okunusHazirla bunu telafi
+// etmiyor. Cache anahtari ve /seslendir'e giden metin bu islenmis hali kullanir.
+$text = seslendirmeMetni($text);
+
 // Cache anahtari: ayni ses + ayni metin => ayni dosya
 $id   = md5($SES . '|' . $text);
 $agi->set_variable('UNIQUE_ID', $id);
@@ -96,4 +102,17 @@ if (!is_file($wav) || filesize($wav) === 0) {
     shell_exec('node /opt/aws-nodejs/polly.js --mp3=' . escapeshellarg($mp3) . ' --text=' . escapeshellarg($text) . ' --wav=' . escapeshellarg($base));
 }
 exit();
+
+/* -------- Okunus yardimcilari (sesli-asistan.php ile birebir) -------- */
+/** Turkce kucuk harf (I->i, İ->i). */
+function tr_kucuk($s) { return mb_strtolower(str_replace(['I', 'İ'], ['ı', 'i'], $s), 'UTF-8'); }
+
+/** BUYUK harf kelimeleri bas-harfi-buyuk forma cevir (TTS harf harf okumasin). */
+function seslendirmeMetni($s)
+{
+    return preg_replace_callback('/[A-ZÇĞİÖŞÜ]{2,}/u', function ($m) {
+        $w = $m[0];
+        return mb_substr($w, 0, 1, 'UTF-8') . tr_kucuk(mb_substr($w, 1, null, 'UTF-8'));
+    }, $s);
+}
 ?>
