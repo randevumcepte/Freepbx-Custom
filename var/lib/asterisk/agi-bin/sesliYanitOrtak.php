@@ -155,3 +155,68 @@ if (!function_exists('parseDateWithChrono')) {
         return null;
     }
 }
+
+if (!function_exists('seslendirmeMetni')) {
+    /** BUYUK harf kelimeleri/markalari bas-harfi-buyuk forma cevir (TTS harf harf okumasin).
+     *  sesli-asistan.php seslendirmeMetni() + gttscache.php + tts.js capsFix ile AYNI mantik. */
+    function seslendirmeMetni($s)
+    {
+        $trKucuk = function ($x) { return mb_strtolower(str_replace(['I', 'İ'], ['ı', 'i'], $x), 'UTF-8'); };
+        return preg_replace_callback('/[A-ZÇĞİÖŞÜ]{2,}/u', function ($m) use ($trKucuk) {
+            $w = $m[0];
+            return mb_substr($w, 0, 1, 'UTF-8') . $trKucuk(mb_substr($w, 1, null, 'UTF-8'));
+        }, (string) $s);
+    }
+}
+
+if (!function_exists('googleAnonsCal')) {
+    /**
+     * Cache'li Google erkek (tr-TR-Wavenet-E) seslendirme + AGI icinden inline cal.
+     * gttscache.php ile AYNI mantik (capsFix + /api/v1/seslendir + md5 cache + Polly
+     * fallback); tek fark dialplan Background yerine dogrudan stream_file ile calar.
+     * Sabit cumleler (orn. "Sizi anlayamadim...") bir kez uretilir, sonra cache'ten.
+     */
+    function googleAnonsCal($agi, $metin)
+    {
+        $ses  = 'tr-TR-Wavenet-E';
+        $text = seslendirmeMetni((string) $metin);
+        $id   = md5($ses . '|' . $text);
+        $base = '/var/spool/asterisk/monitor/gtts-' . $id;
+        $wav  = $base . '.wav';
+        $mp3  = $base . '.mp3';
+
+        // Cache HIT -> dogrudan cal
+        if (is_file($wav) && filesize($wav) > 0) { $agi->stream_file($base); return $base; }
+
+        if ($text !== '') {
+            $ch = curl_init('https://app.randevumcepte.com.tr/api/v1/seslendir');
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['metin' => $text, 'ses' => $ses]));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: application/json']);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            $resp = curl_exec($ch);
+            curl_close($ch);
+            $j = json_decode($resp, true);
+            if (is_array($j) && !empty($j['basarili']) && !empty($j['url'])) {
+                $dl = curl_init($j['url']);
+                curl_setopt($dl, CURLOPT_RETURNTRANSFER, true);
+                curl_setopt($dl, CURLOPT_TIMEOUT, 15);
+                $data = curl_exec($dl);
+                curl_close($dl);
+                if ($data !== false && $data !== '') {
+                    @file_put_contents($mp3, $data);
+                    shell_exec('ffmpeg -y -i ' . escapeshellarg($mp3) . ' -ar 8000 -ac 1 -acodec pcm_s16le ' . escapeshellarg($wav) . ' 2>/dev/null');
+                    @unlink($mp3);
+                }
+            }
+        }
+
+        // Google basarisizsa Polly fallback (cagride sessizlik olmasin)
+        if (!is_file($wav) || filesize($wav) === 0) {
+            shell_exec('node /opt/aws-nodejs/polly.js --mp3=' . escapeshellarg($mp3) . ' --text=' . escapeshellarg($text) . ' --wav=' . escapeshellarg($base));
+        }
+        $agi->stream_file($base);
+        return $base;
+    }
+}

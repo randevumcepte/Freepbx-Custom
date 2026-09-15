@@ -30,14 +30,9 @@ for ($deneme = 1; $deneme <= $maxDeneme; $deneme++) {
     if ($sonuc === 'hayır') { $agi->set_variable('EVETHAYIR', 'hayır'); exit(0); }
 
     // Taninmadi: son deneme degilse uyar ve tekrar sor.
+    // Cache'li Google erkek (tr-TR-Wavenet-E) — kampanya seslendirmesiyle ayni ses.
     if ($deneme < $maxDeneme) {
-        $anlayamadimId = uniqid();
-        shell_exec(
-            "node /opt/aws-nodejs/polly.js --mp3=/var/spool/asterisk/monitor/anlayamadim-$anlayamadimId.mp3 --text=" .
-            escapeshellarg('Sizi anlayamadım. Evet veya hayır diyebilirsiniz.') .
-            " --wav=/var/spool/asterisk/monitor/polly-$anlayamadimId"
-        );
-        $agi->stream_file("/var/spool/asterisk/monitor/polly-$anlayamadimId");
+        googleAnonsCal($agi, 'Sizi anlayamadım. Evet veya hayır diyebilirsiniz.');
     }
 }
 
