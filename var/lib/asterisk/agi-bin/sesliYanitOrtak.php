@@ -178,9 +178,10 @@ if (!function_exists('googleAnonsCal')) {
      */
     function googleAnonsCal($agi, $metin)
     {
-        $ses  = 'tr-TR-Wavenet-E';
+        // Ses: 'ses' param GONDERILMEZ -> sunucu default'u (GOOGLE_TTS_VOICE = tr-TR-Chirp3-HD-Charon
+        // erkek) kullanilir; boylece kampanya anonsu (googletts.php) ile AYNI ses olur.
         $text = seslendirmeMetni((string) $metin);
-        $id   = md5($ses . '|' . $text);
+        $id   = md5('gtts-default|' . $text);
         $base = '/var/spool/asterisk/monitor/gtts-' . $id;
         $wav  = $base . '.wav';
         $mp3  = $base . '.mp3';
@@ -192,7 +193,7 @@ if (!function_exists('googleAnonsCal')) {
             $ch = curl_init('https://app.randevumcepte.com.tr/api/v1/seslendir');
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['metin' => $text, 'ses' => $ses]));
+            curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query(['metin' => $text]));
             curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: application/json']);
             curl_setopt($ch, CURLOPT_TIMEOUT, 15);
             $resp = curl_exec($ch);

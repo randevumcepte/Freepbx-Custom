@@ -65,12 +65,12 @@ try {
     }
 
     // 1) Randevu istiyor mu?
-    anonsCal($agi, 'Size uygun bir randevu oluşturmamı ister misiniz?', 'gkRandevuSor', $uid, '');
+    googleAnonsCal($agi, 'Size uygun bir randevu oluşturmamı ister misiniz?', 'gkRandevuSor', $uid, '');
     $istekKaydi = kayitAl($agi, $uid, 'gkRandevuIstek_' . $katilimciId . '_' . date('YmdHis'), 3000);
     $istek = evetHayirVaryasyon(sesiMetneDonustur($istekKaydi));
 
     if ($istek !== 'evet') {
-        anonsCal($agi, 'Anladım efendim. Dilediğiniz zaman bize ulaşabilirsiniz. Sağlıklı ve mutlu günler dileriz.', 'gkVazgec', $uid, '');
+        googleAnonsCal($agi, 'Anladım efendim. Dilediğiniz zaman bize ulaşabilirsiniz. Sağlıklı ve mutlu günler dileriz.', 'gkVazgec', $uid, '');
         $agi->hangup();
         return;
     }
@@ -80,18 +80,18 @@ try {
     $olustu = false;
 
     for ($deneme = 0; $deneme < $denemeMax && !$olustu; $deneme++) {
-        anonsCal($agi, 'Hangi gün ve saat olsun?', 'gkTarihSor', $uid, '');
+        googleAnonsCal($agi, 'Hangi gün ve saat olsun?', 'gkTarihSor', $uid, '');
         $tarihKaydi = kayitAl($agi, $uid, 'gkTarih_' . $katilimciId . '_' . date('YmdHis'), 4000);
         $tarihMetni = sesiMetneDonustur($tarihKaydi);
 
         if (trim($tarihMetni) === '') {
-            anonsCal($agi, 'Sizi duyamadım. Lütfen gün ve saati tekrar söyler misiniz?', 'gkBos', $uid, '');
+            googleAnonsCal($agi, 'Sizi duyamadım. Lütfen gün ve saati tekrar söyler misiniz?', 'gkBos', $uid, '');
             continue;
         }
 
         $parsed = parseDateWithChrono($tarihMetni, $agi);
         if (!$parsed) {
-            anonsCal($agi, 'Sizi anlayamadım. Lütfen örneğin çarşamba saat on üç gibi söyleyin.', 'gkAnlamadim', $uid, '');
+            googleAnonsCal($agi, 'Sizi anlayamadım. Lütfen örneğin çarşamba saat on üç gibi söyleyin.', 'gkAnlamadim', $uid, '');
             continue;
         }
 
@@ -102,12 +102,12 @@ try {
         ]);
 
         if (empty($kontrol['success'])) {
-            anonsCal($agi, 'Belirttiğiniz zaman için uygun bir randevu bulamadım. Lütfen başka bir gün ve saat söyleyin.', 'gkUygunYok', $uid, '');
+            googleAnonsCal($agi, 'Belirttiğiniz zaman için uygun bir randevu bulamadım. Lütfen başka bir gün ve saat söyleyin.', 'gkUygunYok', $uid, '');
             continue;
         }
 
         $dogal = isset($kontrol['dogalIfade']) ? $kontrol['dogalIfade'] : '';
-        anonsCal($agi, $dogal . ' için randevunuzu oluşturmamı onaylıyor musunuz?', 'gkOnay', $uid, '');
+        googleAnonsCal($agi, $dogal . ' için randevunuzu oluşturmamı onaylıyor musunuz?', 'gkOnay', $uid, '');
         $onayKaydi = kayitAl($agi, $uid, 'gkOnay_' . $katilimciId . '_' . date('YmdHis'), 2500);
         $onay = evetHayirVaryasyon(sesiMetneDonustur($onayKaydi));
 
@@ -125,15 +125,15 @@ try {
         if (!empty($sonuc['success'])) {
             $olustu = true;
             $dogal2 = isset($sonuc['dogalIfade']) ? $sonuc['dogalIfade'] : $dogal;
-            anonsCal($agi, $dogal2 . ' için randevunuzu oluşturdum. Randevunuza on beş dakika önce gelmenizi rica eder, sağlıklı günler dileriz.', 'gkTamam', $uid, '');
+            googleAnonsCal($agi, $dogal2 . ' için randevunuzu oluşturdum. Randevunuza on beş dakika önce gelmenizi rica eder, sağlıklı günler dileriz.', 'gkTamam', $uid, '');
         } else {
-            anonsCal($agi, 'Şu an randevunuzu oluştururken bir sorun oluştu. En kısa sürede sizinle iletişime geçeceğiz. Sağlıklı günler dileriz.', 'gkHata', $uid, '');
+            googleAnonsCal($agi, 'Şu an randevunuzu oluştururken bir sorun oluştu. En kısa sürede sizinle iletişime geçeceğiz. Sağlıklı günler dileriz.', 'gkHata', $uid, '');
             break;
         }
     }
 
     if (!$olustu) {
-        anonsCal($agi, 'Randevunuzu şimdi oluşturamadık. Dilerseniz bizi tekrar arayabilirsiniz. Sağlıklı günler dileriz.', 'gkOlmadi', $uid, '');
+        googleAnonsCal($agi, 'Randevunuzu şimdi oluşturamadık. Dilerseniz bizi tekrar arayabilirsiniz. Sağlıklı günler dileriz.', 'gkOlmadi', $uid, '');
     }
 
     $agi->hangup();
