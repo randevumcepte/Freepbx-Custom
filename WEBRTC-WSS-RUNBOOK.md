@@ -10,19 +10,21 @@ Web softphone buraya `wss://santral.randevumcepte.com.tr:8089/ws` ile register o
 ## 🔴 1. FreePBX'te "Apply Config" bastıktan SONRA (en sık)
 
 FreePBX "Apply Config" her basışta `http_additional.conf`'u otomatik üretip HTTPS dinlemesini
-`127.0.0.1`'e geri çevirir → web softphone dışarıdan bağlanamaz. **Her Apply Config'den sonra:**
-
-```bash
-systemctl start webrtc-wss-fix.service
-```
-
-veya doğrudan script:
+`127.0.0.1`'e geri çevirir → web softphone dışarıdan bağlanamaz. **Her Apply Config'den sonra bu script'i çalıştır:**
 
 ```bash
 /usr/local/sbin/fix-webrtc-http.sh
 ```
 
 Bu, http dinlemesini tekrar `0.0.0.0:8089`'a alır + doğru cert yolunu yazar + `module reload http` yapar.
+
+> ⚠️ **`systemctl start webrtc-wss-fix.service` KULLANMA** — servis `Type=oneshot` + `RemainAfterExit=yes`
+> olduğu için boot'tan sonra "active (exited)" kalır; `start` zaten-aktif ünite üzerinde HİÇBİR ŞEY yapmaz.
+> Mutlaka systemd üzerinden tetiklemek istersen `start` değil **`restart`** kullan:
+> ```bash
+> systemctl restart webrtc-wss-fix.service
+> ```
+> Ama en basit ve garantili olan yukarıdaki doğrudan script'tir.
 
 **Doğrula:**
 ```bash
