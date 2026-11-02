@@ -45,6 +45,18 @@ $agi->set_variable('PAKET',$karsilama_metni['paket'] != '' ? base64_encode(json_
 $agi->set_variable('EN_YAKIN_RANDEVU',$karsilama_metni['enYakinRandevu'] != '' ? base64_encode(json_encode($karsilama_metni['enYakinRandevu'])) : null);
 $agi->set_variable('PERSONEL_SECIMI',$karsilama_metni['personelSecimiVar']);
 
+// Isletmeye ozel karsilama menusu: tus => kuyruk/dahili. Doluysa dialplan ozel-karsilama-menu'ye gider.
+$ozelMenu = (isset($karsilama_metni['ozel_menu']) && is_array($karsilama_metni['ozel_menu'])) ? $karsilama_metni['ozel_menu'] : [];
+$ozelMenuVar = false;
+foreach ($ozelMenu as $tus => $hedef) {
+    $tus = (string) $tus;
+    $hedef = preg_replace('/\D/', '', (string) $hedef);
+    if (!preg_match('/^[1-9]$/', $tus) || $hedef === '') continue;
+    $agi->set_variable('OZEL_HEDEF_' . $tus, $hedef);
+    $ozelMenuVar = true;
+}
+$agi->set_variable('OZEL_MENU', $ozelMenuVar ? '1' : '0');
+
 $hangupValue = $karsilama_metni['anonsCaldiktanSonraKapat'] ? 'true' : 'false';
 $agi->verbose("HANG_UP değeri: " . $hangupValue);
 $agi->set_variable('HANG_UP', $hangupValue);
