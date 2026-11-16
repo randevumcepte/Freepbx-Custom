@@ -8,9 +8,12 @@
  *
  *  1. Laravel'den dahilinin iOS VoIP token'larini alir (santral/hedefler).
  *  2. Token yoksa hemen cikar -> dahili normal Dial edilir (gecikme yok).
- *  3. Varsa softphoneVoipPush.js ile APNs'e VoIP push yollar (CallKit acilir).
+ *  3. iOS token'lari: softphoneVoipPush.js ile APNs VoIP push (CallKit acilir).
+ *     Android token'lari: Laravel santral/android-push -> FCM data mesaji
+ *     (tam ekran gelen cagri).
  *  4. Uygulama santrale register olup "hazir" (ya da "red") diyene kadar
- *     en fazla SP_BEKLE_SN bekler (santral/hazir-mi).
+ *     bekler: iOS SP_BEKLE_SN (kendiliginden baglanir), Android SP_BEKLE_ANDROID_SN
+ *     (kapaliysa kullanici "Cevapla"ya basip uygulama acilinca baglanir).
  *  5. Kanal degiskenleri: SP_TEK = SIP|PJSIP, SP_SONUC = yok|hazir|red|zamanasimi|hata
  *
  * Arayan hattan duserse Asterisk AGI'ye SIGHUP yollar, script olur (bekleme biter).
@@ -20,6 +23,7 @@ require 'phpagi.php';
 
 const SP_API = 'https://app.randevumcepte.com.tr/api/v1/softphone';
 const SP_BEKLE_SN = 9;
+const SP_BEKLE_ANDROID_SN = 25;
 const SP_POLL_MS = 700;
 
 $agi = new AGI();
@@ -69,6 +73,16 @@ if (!$hedefler) {
     sonuc($agi, 'yok', "dahili $dahili icin iOS token yok");
 }
 
+$iosHedefler = [];
+$androidSayisi = 0;
+foreach ($hedefler as $hd) {
+    if (isset($hd['platform']) && $hd['platform'] === 'android') {
+        $androidSayisi++;
+    } else {
+        $iosHedefler[] = $hd;
+    }
+}
+
 // UUID v4 (CallKit cagri kimligi; uygulama "hazir"i bununla bildirir).
 $b = random_bytes(16);
 $b[6] = chr((ord($b[6]) & 0x0f) | 0x40);
@@ -76,46 +90,62 @@ $b[8] = chr((ord($b[8]) & 0x3f) | 0x80);
 $uuid = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($b), 4));
 $agi->set_variable('SP_UUID', $uuid);
 
-$girdi = json_encode([
-    'hedefler' => $hedefler,
-    'veri' => ['uuid' => $uuid, 'numara' => $numara, 'arayan' => $ad],
-]);
-$node = trim((string) shell_exec('command -v node 2>/dev/null')) ?: '/usr/bin/node';
-$proc = proc_open(
-    escapeshellarg($node) . ' ' . escapeshellarg(__DIR__ . '/softphoneVoipPush.js'),
-    [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
-    $borular
-);
-if (!is_resource($proc)) {
-    sonuc($agi, 'hata', 'node calismadi');
-}
-fwrite($borular[0], $girdi);
-fclose($borular[0]);
-$cikti = stream_get_contents($borular[1]);
-$hata = stream_get_contents($borular[2]);
-fclose($borular[1]);
-fclose($borular[2]);
-proc_close($proc);
-
-$sonuclar = json_decode($cikti, true) ?: [];
 $gonderildi = 0;
-foreach ($sonuclar as $r) {
-    $agi->verbose("softphone push $dahili: {$r['durum']} {$r['ortam']} {$r['status']} {$r['neden']}", 1);
-    if ($r['durum'] === 'ok') {
-        $gonderildi++;
-    } elseif ($r['durum'] === 'gecersiz') {
-        spPost('/santral/token-sil', ['anahtar' => $anahtar, 'token' => $r['token']], 2);
+
+// --- Android: Laravel -> FCM ---
+if ($androidSayisi > 0) {
+    $a = spPost('/santral/android-push', [
+        'anahtar' => $anahtar, 'dahili' => $dahili, 'uuid' => $uuid,
+        'numara' => $numara, 'arayan' => $ad,
+    ], 8);
+    $agi->verbose('softphone android push ' . $dahili . ': ' . json_encode($a), 1);
+    if ($a && !empty($a['gonderilen'])) {
+        $gonderildi += (int) $a['gonderilen'];
     }
 }
-if ($hata) {
-    $agi->verbose('softphone push node stderr: ' . substr($hata, 0, 300), 1);
+
+// --- iOS: APNs VoIP (node) ---
+if ($iosHedefler) {
+    $girdi = json_encode([
+        'hedefler' => $iosHedefler,
+        'veri' => ['uuid' => $uuid, 'numara' => $numara, 'arayan' => $ad],
+    ]);
+    $node = trim((string) shell_exec('command -v node 2>/dev/null')) ?: '/usr/bin/node';
+    $proc = proc_open(
+        escapeshellarg($node) . ' ' . escapeshellarg(__DIR__ . '/softphoneVoipPush.js'),
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $borular
+    );
+    if (is_resource($proc)) {
+        fwrite($borular[0], $girdi);
+        fclose($borular[0]);
+        $cikti = stream_get_contents($borular[1]);
+        $hata = stream_get_contents($borular[2]);
+        fclose($borular[1]);
+        fclose($borular[2]);
+        proc_close($proc);
+        foreach ((json_decode($cikti, true) ?: []) as $r) {
+            $agi->verbose("softphone push $dahili: {$r['durum']} {$r['ortam']} {$r['status']} {$r['neden']}", 1);
+            if ($r['durum'] === 'ok') {
+                $gonderildi++;
+            } elseif ($r['durum'] === 'gecersiz') {
+                spPost('/santral/token-sil', ['anahtar' => $anahtar, 'token' => $r['token']], 2);
+            }
+        }
+        if ($hata) {
+            $agi->verbose('softphone push node stderr: ' . substr($hata, 0, 300), 1);
+        }
+    } else {
+        $agi->verbose('softphone push: node calismadi', 1);
+    }
 }
+
 if ($gonderildi === 0) {
     sonuc($agi, 'hata', 'push gonderilemedi');
 }
 
 // Uygulama register olup "hazir" diyene kadar bekle.
-$bitis = microtime(true) + SP_BEKLE_SN;
+$bitis = microtime(true) + ($androidSayisi > 0 ? SP_BEKLE_ANDROID_SN : SP_BEKLE_SN);
 while (microtime(true) < $bitis) {
     usleep(SP_POLL_MS * 1000);
     $d = spPost('/santral/hazir-mi', ['anahtar' => $anahtar, 'uuid' => $uuid], 2);
