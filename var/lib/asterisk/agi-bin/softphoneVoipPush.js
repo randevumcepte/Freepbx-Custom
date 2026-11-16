@@ -9,7 +9,7 @@
 // APNs anahtari: /etc/asterisk/softphone_apns.json varsa oradan
 //   {"varsayilan": {"keyPath": "...p8", "keyId": "...", "teamId": "..."},
 //    "<bundle id>": {...}}   // farkli Apple hesabindaki marka icin
-// yoksa asagidaki varsayilan (pushGonder.js'teki anahtar).
+// yoksa asagidaki varsayilan (Team 24DZ882DDK APNs anahtari 7BXAX2SN7V).
 //
 // Once production, BadDeviceToken ise sandbox denenir (Xcode/debug build).
 // JWT 40 dk cache'lenir (Apple sik JWT uretimini 429 ile reddeder).
@@ -19,8 +19,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 
 const VARSAYILAN = {
-  keyPath: '/opt/apns-push/AuthKey_SVN64Y89VU.p8',
-  keyId: 'SVN64Y89VU',
+  keyPath: '/opt/apns-push/AuthKey_7BXAX2SN7V.p8',
+  keyId: '7BXAX2SN7V',
   teamId: '24DZ882DDK',
 };
 
