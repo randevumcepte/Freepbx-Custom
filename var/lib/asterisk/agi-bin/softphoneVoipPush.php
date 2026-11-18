@@ -67,8 +67,13 @@ if ($dahili === '' || $anahtar === '') {
     sonuc($agi, 'hata', 'dahili/anahtar yok');
 }
 
-$h = spPost('/santral/hedefler', ['anahtar' => $anahtar, 'dahili' => $dahili]);
+$h = spPost('/santral/hedefler', ['anahtar' => $anahtar, 'dahili' => $dahili, 'numara' => $numara]);
 $hedefler = ($h && !empty($h['hedefler'])) ? $h['hedefler'] : [];
+// Kayitli musteri adi: push'ta ve uygulama acikken gelen INVITE'ta gorunsun.
+if ($h && !empty($h['arayan'])) {
+    $ad = $h['arayan'];
+    $agi->set_variable('CALLERID(name)', $ad);
+}
 if (!$hedefler) {
     sonuc($agi, 'yok', "dahili $dahili icin iOS token yok");
 }
