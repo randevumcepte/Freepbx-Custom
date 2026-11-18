@@ -17,6 +17,11 @@
  *  5. Kanal degiskenleri: SP_TEK = SIP|PJSIP, SP_SONUC = yok|hazir|red|zamanasimi|hata
  *
  * Arayan hattan duserse Asterisk AGI'ye SIGHUP yollar, script olur (bekleme biter).
+ *
+ * Bitti modu: AGI(softphoneVoipPush.php,<dahili>,bitti,<uuid>)
+ *   Push gonderilen kanal kapaninca [softphone-push-bitti] hangup handler'i
+ *   cagirir; Laravel santral/bitti -> Android'e iptal push'u (acik gelen cagri
+ *   ekrani kapanir, cihaz cevrimdisiyken bekleyen gec push'lar gosterilmez).
  * Anahtar: /etc/asterisk/softphone_anahtar (Laravel .env SOFTPHONE_SANTRAL_ANAHTAR ile ayni).
  */
 require 'phpagi.php';
@@ -28,6 +33,26 @@ const SP_POLL_MS = 700;
 
 $agi = new AGI();
 $dahili = preg_replace('/[^0-9]/', '', isset($argv[1]) ? $argv[1] : '');
+
+// --- Bitti modu (hangup handler): kanal kapandi, cihazdaki cagriyi iptal et ---
+if (isset($argv[2]) && $argv[2] === 'bitti') {
+    $bUuid = strtolower(isset($argv[3]) ? $argv[3] : '');
+    $bAnahtar = trim((string) @file_get_contents('/etc/asterisk/softphone_anahtar'));
+    if ($dahili !== '' && $bAnahtar !== '' && preg_match('/^[0-9a-f-]{36}$/', $bUuid)) {
+        $ch = curl_init(SP_API . '/santral/bitti');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode(['anahtar' => $bAnahtar, 'dahili' => $dahili, 'uuid' => $bUuid]),
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
+            CURLOPT_CONNECTTIMEOUT => 2,
+            CURLOPT_TIMEOUT => 5,
+        ]);
+        curl_exec($ch);
+        curl_close($ch);
+    }
+    exit(0);
+}
 $numara = isset($agi->request['agi_callerid']) ? $agi->request['agi_callerid'] : '';
 $ad = isset($agi->request['agi_calleridname']) ? $agi->request['agi_calleridname'] : '';
 if ($numara === 'unknown') $numara = '';
@@ -94,6 +119,9 @@ $b[6] = chr((ord($b[6]) & 0x0f) | 0x40);
 $b[8] = chr((ord($b[8]) & 0x3f) | 0x80);
 $uuid = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($b), 4));
 $agi->set_variable('SP_UUID', $uuid);
+// Kanal ne sekilde kapanirsa kapansin (arayan kapatti, kuyruk denemesi doldu,
+// gorusme bitti) cihaza "bitti" haber verilsin.
+$agi->set_variable('CHANNEL(hangup_handler_push)', 'softphone-push-bitti,s,1(' . $dahili . ')');
 
 $gonderildi = 0;
 
@@ -101,7 +129,7 @@ $gonderildi = 0;
 if ($androidSayisi > 0) {
     $a = spPost('/santral/android-push', [
         'anahtar' => $anahtar, 'dahili' => $dahili, 'uuid' => $uuid,
-        'numara' => $numara, 'arayan' => $ad,
+        'numara' => $numara, 'arayan' => $ad, 'ttl' => SP_BEKLE_ANDROID_SN,
     ], 8);
     $agi->verbose('softphone android push ' . $dahili . ': ' . json_encode($a), 1);
     if ($a && !empty($a['gonderilen'])) {
