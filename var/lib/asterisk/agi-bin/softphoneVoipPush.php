@@ -15,6 +15,9 @@
  *     bekler: iOS SP_BEKLE_SN (kendiliginden baglanir), Android SP_BEKLE_ANDROID_SN
  *     (kapaliysa kullanici "Cevapla"ya basip uygulama acilinca baglanir).
  *  5. Kanal degiskenleri: SP_TEK = SIP|PJSIP, SP_SONUC = yok|hazir|red|zamanasimi|hata
+ *     Uygulama cevabi: hazir | red (kullanici Reddet'e bastı -> ayni cagriya bagli
+ *     tum kanallar kapatilir, arayan dahil; kuyruk tekrar denemez) | mesgul (cihaz
+ *     baska gorusmede -> sadece bu deneme mesgul, arayan kuyrukta bekler).
  *
  * Arayan hattan duserse Asterisk AGI'ye SIGHUP yollar, script olur (bekleme biter).
  *
@@ -68,6 +71,34 @@ function sonuc($agi, $s, $not = '')
     $agi->set_variable('SP_SONUC', $s);
     $agi->verbose("softphone push: $s $not", 1);
     exit(0);
+}
+
+/**
+ * Kullanici Reddet'e basti: bu cagriya bagli (ayni linkedid) tum kanallari kapat.
+ * Kuyruk bacagi, AI aktarma bacagi (ARI kanali dusunce kopru arayani kapatir) ve
+ * dogrudan gelen arayan dahil. Kendi kanalimiza dokunulmaz (dialplan Busy'ye gider).
+ */
+function cagriyiSonlandir($agi)
+{
+    $kendi = isset($agi->request['agi_channel']) ? $agi->request['agi_channel'] : '';
+    $l = $agi->get_full_variable('${CHANNEL(linkedid)}');
+    $linkedid = isset($l['data']) ? trim($l['data']) : '';
+    if ($linkedid === '') {
+        $agi->verbose('softphone red: linkedid yok, sadece bu deneme reddedildi', 1);
+        return;
+    }
+    $c = $agi->get_full_variable('${CHANNELS()}');
+    $kanallar = preg_split('/\s+/', isset($c['data']) ? trim($c['data']) : '', -1, PREG_SPLIT_NO_EMPTY);
+    $kapatilan = [];
+    foreach ($kanallar as $ch) {
+        if ($ch === $kendi) continue;
+        $x = $agi->get_full_variable('${IMPORT(' . $ch . ',CHANNEL(linkedid))}');
+        if (isset($x['data']) && trim($x['data']) === $linkedid) {
+            $agi->hangup($ch);
+            $kapatilan[] = $ch;
+        }
+    }
+    $agi->verbose('softphone red: cagri sonlandirildi linkedid=' . $linkedid . ' kanallar=' . implode(',', $kapatilan), 1);
 }
 
 function spPost($yol, $veri, $zamanAsimi = 3)
@@ -187,7 +218,13 @@ while (microtime(true) < $bitis) {
         usleep(300000);
         sonuc($agi, 'hazir', $uuid);
     }
+    if ($d && $d['durum'] === 'mesgul') {
+        // Cihaz baska gorusmede: sadece bu deneme mesgul, arayan kuyrukta bekler.
+        sonuc($agi, 'red', 'mesgul ' . $uuid);
+    }
     if ($d && $d['durum'] === 'red') {
+        // Kullanici Reddet'e basti: aramayi tamamen sonlandir (kuyruk tekrar denemesin).
+        cagriyiSonlandir($agi);
         sonuc($agi, 'red', $uuid);
     }
 }
